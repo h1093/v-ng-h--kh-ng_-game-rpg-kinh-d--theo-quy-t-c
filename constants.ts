@@ -1,0 +1,42 @@
+import { PlayerStats, Difficulty } from "./types";
+
+export const CHARACTER_CREATION_QUESTION = "Khi bóng tối thì thầm tên bạn, bạn sẽ đáp lại thế nào?";
+
+export const CHARACTER_CHOICES: { text: string; stats: PlayerStats; archetype: string }[] = [
+    {
+        text: "Thận trọng điều tra âm thanh.",
+        stats: { sanity: 12, stamina: 8, stealth: 10 },
+        archetype: "Người Điều Tra Thận Trọng"
+    },
+    {
+        text: "Bỏ chạy. Tìm nơi ẩn nấp gần nhất và cầu nguyện nó không tìm thấy bạn.",
+        stats: { sanity: 8, stamina: 10, stealth: 12 },
+        archetype: "Kẻ Sống Sót Tuyệt Vọng"
+    },
+    {
+        text: "Chuẩn bị chiến đấu, vớ lấy một vũ khí tạm bợ.",
+        stats: { sanity: 10, stamina: 12, stealth: 8 },
+        archetype: "Chiến Binh Bất Đắc Dĩ"
+    }
+];
+
+export const DIFFICULTY_CHOICES: { name: Difficulty; description: string }[] = [
+    {
+        name: Difficulty.EASY,
+        description: "Lý trí và Sức bền giảm chậm hơn. AI sẽ vị tha hơn, tạo cơ hội để khám phá câu chuyện.",
+    },
+    {
+        name: Difficulty.NORMAL,
+        description: "Trải nghiệm được cân bằng. Một thử thách thực sự về sinh tồn và suy luận.",
+    },
+    {
+        name: Difficulty.HARD,
+        description: "Lý trí và Sức bền giảm rất nhanh. AI tàn nhẫn và khó đoán, các quy tắc sẽ khó tìm hơn.",
+    }
+];
+
+export const WORLD_BUILDING_QUESTIONS = [
+  "Cái bóng dài nhất trong thế giới này được tạo ra bởi cái gì?",
+  "Người ta thì thầm về một sinh vật ẩn nấp trong bóng tối. Nó được gọi là gì?",
+  "Quy tắc quan trọng nhất nhưng đã bị lãng quên là gì?"
+];
