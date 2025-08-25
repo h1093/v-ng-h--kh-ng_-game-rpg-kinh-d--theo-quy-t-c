@@ -1,6 +1,6 @@
 import React from 'react';
-import { NPCState, Difficulty } from '../types';
-import type { InitialSituation, Scene, PlayerStats, Item, NPC, WorldState, SavedGame } from '../types';
+import { NPCState, Difficulty, SurvivorStatus, WorldLore, ActTransition } from '../types';
+import type { InitialSituation, Scene, PlayerStats, Item, NPC, WorldState, SavedGame, Survivor } from '../types';
 import { generateNextScene, generateNpcMindUpdate, generateSummary } from '../services/geminiService';
 import LoadingIndicator from './LoadingIndicator';
 
@@ -38,18 +38,166 @@ const InfoModal: React.FC<{ title: string; onClose: () => void; children: React.
   );
 };
 
-// NEW: This component replaces the old LoreContent to hide secrets at the start.
-const ContextContent: React.FC<{ description: string }> = ({ description }) => (
-  <div className="space-y-6">
-    <div>
-      <h3 className="font-bold text-lg text-gray-400 mb-2">MÔ TẢ BAN ĐẦU</h3>
-      <p className="text-gray-400 whitespace-pre-wrap leading-relaxed">{description}</p>
-    </div>
-     <div>
-      <p className="text-gray-500 italic mt-4">Hãy khám phá thế giới để tìm hiểu thêm về bi kịch đã xảy ra, thực thể đang ám ảnh nơi này và nguồn gốc của các quy tắc thông qua các tab "Nhật Ký" và "Khám Phá".</p>
-    </div>
-  </div>
-);
+const RedactedText: React.FC<{ fullText: string; allKeywords: string[]; knownKeywords: string[] }> = ({ fullText, allKeywords, knownKeywords }) => {
+    const sentences = fullText.split(/(?<=[.?!])\s+/); // Split text into sentences
+
+    const revealedText = sentences.map((sentence, index) => {
+        // Check if the sentence contains any keyword that is not yet known
+        const containsHiddenKeyword = allKeywords.some(keyword => 
+            sentence.toLowerCase().includes(keyword.toLowerCase()) && !knownKeywords.some(known => known.toLowerCase() === keyword.toLowerCase())
+        );
+
+        if (containsHiddenKeyword) {
+            return <span key={index} className="bg-gray-700 text-gray-700 select-none">BÍ MẬT CHƯA ĐƯỢC HÉ LỘ. </span>;
+        }
+        return <span key={index}>{sentence} </span>;
+    });
+
+    return <p className="text-gray-400 whitespace-pre-wrap leading-relaxed">{revealedText}</p>;
+};
+
+
+const CaseFileContent: React.FC<{ 
+    situation: InitialSituation;
+    summaries: string[]; 
+    entries: string[];
+    discoveredLore: string[];
+}> = ({ situation, summaries, entries, discoveredLore }) => {
+    const [activeTab, setActiveTab] = React.useState('summary');
+    
+    const worldLore = situation.worldLore;
+    const knownKeywords = React.useMemo(() => {
+        return (worldLore.keyLoreKeywords || []).filter(kw => 
+            entries.some(entry => entry.toLowerCase().includes(kw.toLowerCase()))
+        );
+    }, [entries, worldLore.keyLoreKeywords]);
+
+    const renderTabContent = () => {
+        switch (activeTab) {
+            case 'tragedy':
+                return (
+                    <div className="space-y-6">
+                        <div>
+                            <h3 className="font-bold text-lg text-gray-300 mb-2">NƠI NÀY ĐÃ TỪNG LÀ GÌ?</h3>
+                            <p className="pl-4 border-l-2 border-gray-700 text-gray-400 whitespace-pre-wrap leading-relaxed">{worldLore.whatItWas}</p>
+                        </div>
+                         <div>
+                            <h3 className="font-bold text-lg text-gray-300 mb-2">BI KỊCH ĐÃ XẢY RA</h3>
+                            <div className="pl-4 border-l-2 border-gray-700">
+                                <RedactedText fullText={worldLore.whatHappened} allKeywords={worldLore.keyLoreKeywords} knownKeywords={knownKeywords} />
+                             </div>
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-lg text-gray-300 mb-2">NGUỒN GỐC CỦA CÁC QUY TẮC</h3>
+                             <div className="pl-4 border-l-2 border-gray-700">
+                                <RedactedText fullText={worldLore.rulesOrigin} allKeywords={worldLore.keyLoreKeywords} knownKeywords={knownKeywords} />
+                            </div>
+                        </div>
+                    </div>
+                );
+            case 'entity':
+                 return (
+                    <div className="space-y-6">
+                        <div>
+                            <h3 className="font-bold text-lg text-gray-300 mb-2">DANH XƯNG</h3>
+                            <p className="pl-4 border-l-2 border-gray-700 text-gray-400 text-2xl flicker">{worldLore.entityName}</p>
+                        </div>
+                         <div>
+                            <h3 className="font-bold text-lg text-gray-300 mb-2">MÔ TẢ</h3>
+                             <div className="pl-4 border-l-2 border-gray-700">
+                                <RedactedText fullText={worldLore.entityDescription} allKeywords={worldLore.keyLoreKeywords} knownKeywords={knownKeywords} />
+                            </div>
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-lg text-gray-300 mb-2">ĐỘNG CƠ</h3>
+                            <div className="pl-4 border-l-2 border-gray-700">
+                                <RedactedText fullText={worldLore.entityMotivation} allKeywords={worldLore.keyLoreKeywords} knownKeywords={knownKeywords} />
+                            </div>
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-lg text-gray-300 mb-2">BIỂU TƯỢNG</h3>
+                             <div className="pl-4 border-l-2 border-gray-700">
+                                <RedactedText fullText={worldLore.mainSymbol} allKeywords={worldLore.keyLoreKeywords} knownKeywords={knownKeywords} />
+                             </div>
+                        </div>
+                    </div>
+                );
+            case 'notes':
+                 return (
+                    <div className="space-y-8">
+                        <div>
+                            <h3 className="font-bold text-lg text-gray-300 mb-4">TRI THỨC ĐÃ KHÁM PHÁ</h3>
+                             {entries.length > 0 ? (
+                              <ul className="list-disc list-inside space-y-3">
+                                {entries.map((entry, index) => (
+                                  <li key={index} className="text-gray-400">{entry}</li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="text-gray-600 italic">Những bí mật của nơi này vẫn còn là một ẩn số.</p>
+                            )}
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-lg text-gray-300 mb-4">GHI CHÉP RỜI RẠC</h3>
+                            {discoveredLore.length > 0 ? (
+                                <ul className="space-y-3">
+                                    {discoveredLore.map((lore, index) => <li key={index} className="text-gray-500 italic">"{lore}"</li>)}
+                                </ul>
+                            ) : <p className="text-gray-600 italic">Chưa tìm thấy manh mối nào.</p>}
+                        </div>
+                    </div>
+                 );
+            case 'summary':
+            default:
+                return (
+                    <div className="space-y-8">
+                       <div>
+                            <h3 className="font-bold text-lg text-gray-300 mb-2">MÔ TẢ BAN ĐẦU</h3>
+                            <p className="pl-4 border-l-2 border-gray-700 text-gray-400 whitespace-pre-wrap leading-relaxed">{situation.situationDescription}</p>
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-lg text-gray-300 mb-4">BIÊN NIÊN SỬ</h3>
+                            {summaries.length > 0 ? (
+                              <div className="space-y-4">
+                                {summaries.map((summary, index) => (
+                                  <div key={index} className="pl-4 border-l-2 border-gray-800">
+                                      <p className="text-sm font-semibold text-gray-500 mb-1">Chương {index + 1}</p>
+                                      <p className="text-gray-400 italic">"{summary}"</p>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-gray-600 italic">Câu chuyện chỉ vừa mới bắt đầu.</p>
+                            )}
+                        </div>
+                    </div>
+                );
+        }
+    };
+
+    const TabButton: React.FC<{ tabId: string; label: string; }> = ({ tabId, label }) => (
+        <button 
+            onClick={() => setActiveTab(tabId)}
+            className={`px-4 py-2 text-sm rounded-t-md transition-colors ${activeTab === tabId ? 'bg-gray-800 text-red-500 border-b-2 border-red-500' : 'bg-transparent text-gray-500 hover:text-white'}`}
+        >
+            {label}
+        </button>
+    );
+
+    return (
+        <div>
+            <div className="border-b border-gray-800 mb-6 flex space-x-2">
+                <TabButton tabId="summary" label="Tóm Tắt" />
+                <TabButton tabId="tragedy" label="Bi Kịch" />
+                <TabButton tabId="entity" label="Thực Thể" />
+                <TabButton tabId="notes" label="Ghi Chép" />
+            </div>
+            <div>
+                {renderTabContent()}
+            </div>
+        </div>
+    );
+};
 
 
 const NPCContent: React.FC<{ npcs: NPC[] }> = ({ npcs }) => {
@@ -135,38 +283,6 @@ const QuestContent: React.FC<{ mainQuest: string; sideQuests: string[]; knownClu
   </div>
 );
 
-const JournalContent: React.FC<{ summaries: string[]; entries: string[] }> = ({ summaries, entries }) => (
-    <div className="space-y-8">
-      <div>
-        <h3 className="font-bold text-lg text-gray-400 mb-4 border-b border-gray-700 pb-2">BIÊN NIÊN SỬ</h3>
-        {summaries.length > 0 ? (
-          <div className="space-y-4">
-            {summaries.map((summary, index) => (
-              <div key={index} className="pl-4 border-l-2 border-gray-800">
-                  <p className="text-sm font-semibold text-gray-500 mb-1">Chương {index + 1}</p>
-                  <p className="text-gray-400 italic">"{summary}"</p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-gray-600 italic">Câu chuyện chỉ vừa mới bắt đầu.</p>
-        )}
-      </div>
-      <div>
-        <h3 className="font-bold text-lg text-gray-400 mb-4 border-b border-gray-700 pb-2">TRI THỨC ĐÃ KHÁM PHÁ</h3>
-         {entries.length > 0 ? (
-          <ul className="list-disc list-inside space-y-3">
-            {entries.map((entry, index) => (
-              <li key={index} className="text-gray-400">{entry}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-gray-600 italic">Những bí mật của nơi này vẫn còn là một ẩn số.</p>
-        )}
-      </div>
-    </div>
-);
-
 const ProfileContent: React.FC<{ name: string; bio: string; archetype: string; stats: PlayerStats }> = ({ name, bio, archetype, stats }) => (
     <div className="space-y-6">
       <div>
@@ -197,6 +313,64 @@ const ProfileContent: React.FC<{ name: string; bio: string; archetype: string; s
     </div>
 );
 
+const GroupContent: React.FC<{ survivors: Survivor[] }> = ({ survivors }) => {
+  const statusColor: { [key in SurvivorStatus]: string } = {
+    [SurvivorStatus.ALIVE]: 'text-green-400',
+    [SurvivorStatus.INJURED]: 'text-yellow-400',
+    [SurvivorStatus.PANICKED]: 'text-purple-400',
+    [SurvivorStatus.DEAD]: 'text-red-600 line-through',
+  };
+
+  return (
+    <div className="space-y-2">
+      <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
+        {survivors.map((survivor) => (
+          <li key={survivor.name} className="flex justify-between items-baseline">
+            <span className={`text-gray-300 ${survivor.status === SurvivorStatus.DEAD ? 'text-gray-600' : ''}`}>{survivor.name}</span>
+            <span className={`text-sm font-semibold ${statusColor[survivor.status]}`}>{survivor.status}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
+const ActTransitionScreen: React.FC<{ transition: ActTransition; onContinue: () => void }> = ({ transition, onContinue }) => {
+  const [showSummary, setShowSummary] = React.useState(true);
+
+  if (showSummary) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-95 flex flex-col items-center justify-center z-50 p-8 fade-in">
+        <h2 className="text-4xl text-red-500 mb-6 flicker">MÀN KẾT</h2>
+        <p className="max-w-3xl text-lg text-gray-300 whitespace-pre-wrap mb-10 text-center leading-relaxed italic">
+          {transition.summaryOfCompletedAct}
+        </p>
+        <button
+          onClick={() => setShowSummary(false)}
+          className="px-8 py-3 bg-red-600 border-2 border-red-600 text-black hover:bg-red-700 transition-all duration-300 text-xl"
+        >
+          Tiếp Tục...
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-95 flex flex-col items-center justify-center z-50 p-8 fade-in">
+      <h2 className="text-4xl text-gray-400 mb-6">MÀN MỚI</h2>
+      <p className="max-w-3xl text-lg text-gray-300 whitespace-pre-wrap mb-10 text-center leading-relaxed">
+        {transition.nextActDescription}
+      </p>
+       <button
+        onClick={onContinue}
+        className="px-8 py-3 bg-transparent border-2 border-gray-600 text-gray-400 hover:bg-gray-600 hover:text-white transition-all duration-300 text-xl"
+      >
+        Bắt Đầu
+      </button>
+    </div>
+  );
+};
+
 
 interface GameScreenProps {
   situation?: InitialSituation;
@@ -213,7 +387,7 @@ interface GameScreenProps {
 }
 
 const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBio, initialStats, playerArchetype, difficulty, initialState, onGameOver, onVictory, onError, onSaveAndExit }) => {
-  const [currentSituation] = React.useState<InitialSituation>(() => initialState?.situation || situation!);
+  const [currentSituation, setCurrentSituation] = React.useState<InitialSituation>(() => initialState?.situation || situation!);
   const [currentDifficulty] = React.useState<Difficulty>(() => initialState?.difficulty || difficulty);
   
   const [scene, setScene] = React.useState<Scene | null>(() => initialState?.scene || null);
@@ -224,6 +398,7 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
   const [inventory, setInventory] = React.useState<Item[]>(() => initialState?.inventory || []);
   const [discoveredLore, setDiscoveredLore] = React.useState<string[]>(() => initialState?.discoveredLore || []);
   const [npcs, setNpcs] = React.useState<NPC[]>(() => initialState?.npcs || []);
+  const [survivors, setSurvivors] = React.useState<Survivor[]>(() => initialState?.survivors || []);
   const [worldState, setWorldState] = React.useState<WorldState>(() => initialState?.worldState || {});
   const [keyEvents, setKeyEvents] = React.useState<string[]>(() => initialState?.keyEvents || []);
   const [mainQuest, setMainQuest] = React.useState<string>(() => initialState?.mainQuest || '');
@@ -235,6 +410,9 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
   const [modalContent, setModalContent] = React.useState<{ title: string; content: React.ReactNode } | null>(null);
   const storyEndRef = React.useRef<HTMLDivElement>(null);
   const [playerInput, setPlayerInput] = React.useState('');
+  const [itemUsedLastTurn, setItemUsedLastTurn] = React.useState<boolean>(() => initialState?.itemUsedLastTurn || false);
+  const [actTransition, setActTransition] = React.useState<ActTransition | null>(null);
+  const [dialogueTarget, setDialogueTarget] = React.useState<NPC | null>(null);
   
   React.useEffect(() => {
     // This effect now only runs for a NEW game. Loading a game bypasses this.
@@ -248,6 +426,7 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
       const firstEntry = situation.situationDescription;
       setStoryHistory([firstEntry, initialScene.sceneDescription]);
       setKnownRules(situation.rules);
+      setSurvivors(situation.survivors);
       
       const introducedIds = situation.firstScene.introducedNpcIds || [];
       const initialPlayerKnownNpcs = (situation.npcs || [])
@@ -285,6 +464,7 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
       inventory,
       discoveredLore,
       npcs,
+      survivors,
       worldState,
       keyEvents,
       mainQuest,
@@ -294,12 +474,33 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
       loreSummaries,
       loreEntries,
       difficulty: currentDifficulty,
+      itemUsedLastTurn,
     };
     onSaveAndExit(currentState);
   };
 
+  const handleContinueTransition = () => {
+    if (!actTransition) return;
+
+    // Apply the changes from the transition object
+    setMainQuest(actTransition.newMainQuest);
+
+    if (actTransition.newRules) {
+        const newUniqueRules = actTransition.newRules.filter(rule => !knownRules.includes(rule));
+        if (newUniqueRules.length > 0) {
+            setKeyEvents(prev => [...prev, `Đã khám phá ra quy tắc mới: "${newUniqueRules.join('", "')}"`]);
+            setKnownRules(prevRules => [...prevRules, ...newUniqueRules]);
+        }
+    }
+
+    setStoryHistory(prev => [...prev, actTransition.nextActDescription]);
+
+    // Clear the transition state to return to the game
+    setActTransition(null);
+  };
+
   const handleChoice = async (choice: string) => {
-    if (isLoading) return;
+    if (isLoading || !choice.trim()) return;
     setIsLoading(true);
 
     const fullHistory = [...storyHistory, `> ${choice}`];
@@ -307,12 +508,34 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
 
     try {
       // Step 1: Generate the next scene based on current state
-      const nextScene = await generateNextScene(currentSituation, fullHistory, knownRules, choice, playerStats, inventory, npcs, worldState, keyEvents, mainQuest, sideQuests, knownClues, loreSummaries, loreEntries, playerName, playerBio, playerArchetype, currentDifficulty, turnCount);
+      const nextScene = await generateNextScene(currentSituation, fullHistory, knownRules, choice, playerStats, inventory, npcs, survivors, worldState, keyEvents, mainQuest, sideQuests, knownClues, loreSummaries, loreEntries, playerName, playerBio, playerArchetype, currentDifficulty, turnCount, itemUsedLastTurn);
       
-      const newKeyEvents: string[] = [];
-      let updatedNpcs = [...npcs]; // Create a working copy of NPCs
+      // Check for act transition FIRST
+      if (nextScene.actTransition) {
+          // Set the transition state and pause further processing for this turn
+          setStoryHistory(prev => [...prev, nextScene.sceneDescription]); // Show the immediate result of the action
+          setActTransition(nextScene.actTransition);
+          setIsLoading(false); // Stop loading to show the transition screen
+          return; // Exit early
+      }
 
-      // Step 2: Apply all non-NPC state changes from the new scene
+      const newKeyEvents: string[] = [];
+      let workingSurvivors = [...survivors];
+
+      // --- Survivor Updates ---
+      if (nextScene.survivorUpdates && nextScene.survivorUpdates.length > 0) {
+        nextScene.survivorUpdates.forEach(update => {
+            const survivorIndex = workingSurvivors.findIndex(s => s.name === update.name);
+            if (survivorIndex !== -1) {
+                 if (workingSurvivors[survivorIndex].status !== SurvivorStatus.DEAD && update.newStatus === SurvivorStatus.DEAD) {
+                    newKeyEvents.push(`${update.name} đã chết: ${update.reason || 'Nguyên nhân không rõ.'}`);
+                }
+                workingSurvivors[survivorIndex] = { ...workingSurvivors[survivorIndex], status: update.newStatus };
+            }
+        });
+      }
+
+
       // --- Stats ---
       if (nextScene.statChanges) {
         setPlayerStats(prevStats => ({
@@ -331,7 +554,8 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
         }
       }
 
-      // --- Inventory ---
+      // --- Inventory & Item Cooldown ---
+      let wasItemUsedOrBroken = false;
       if (nextScene.newItem) {
         const itemExists = inventory.some(item => item.name === nextScene.newItem!.name);
         if (!itemExists) {
@@ -342,8 +566,15 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
       if (nextScene.itemUsed) {
         newKeyEvents.push(`Đã sử dụng vật phẩm: ${nextScene.itemUsed}.`);
         setInventory(prevInventory => prevInventory.filter(item => item.name !== nextScene.itemUsed));
+        wasItemUsedOrBroken = true;
       }
-      
+      if (nextScene.itemBroken) {
+        newKeyEvents.push(`Vật phẩm đã bị hỏng: ${nextScene.itemBroken}.`);
+        setInventory(prevInventory => prevInventory.filter(item => item.name !== nextScene.itemBroken));
+        wasItemUsedOrBroken = true;
+      }
+      setItemUsedLastTurn(wasItemUsedOrBroken);
+
       // --- Lore & Knowledge ---
       if (nextScene.newLoreSnippet) {
         newKeyEvents.push(`Đã khám phá ra một bí mật: "${nextScene.newLoreSnippet}"`);
@@ -352,7 +583,7 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
       if (nextScene.newLoreEntries && nextScene.newLoreEntries.length > 0) {
           const newUniqueEntries = nextScene.newLoreEntries.filter(entry => !loreEntries.includes(entry));
           if (newUniqueEntries.length > 0) {
-              newKeyEvents.push(`Đã ghi nhận tri thức mới vào nhật ký.`);
+              newKeyEvents.push(`Đã ghi nhận tri thức mới vào hồ sơ.`);
               setLoreEntries(prev => [...prev, ...newUniqueEntries]);
           }
       }
@@ -385,12 +616,18 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
           setKnownClues(prev => [...prev, ...uniqueNewClues]);
         }
       }
+      
+      let updatedNpcs = [...npcs];
 
-      // Step 3: Handle NPC updates in a multi-step process
-      // 3a: Add any brand new NPCs
+      // --- Handle NPC updates ---
+      // Add any brand new NPCs
       if (nextScene.newNPCs && nextScene.newNPCs.length > 0) {
           const newNpcsWithHiddenInfo = nextScene.newNPCs.map(npc => {
             newKeyEvents.push(`Đã gặp một người lạ bí ẩn.`);
+            // Also add them to the main survivor list if they aren't there already
+            if (!workingSurvivors.some(s => s.name === npc.name)) {
+                workingSurvivors.push({ name: npc.name, status: SurvivorStatus.ALIVE });
+            }
             return {
                 ...npc,
                 name: "Người lạ bí ẩn",
@@ -401,18 +638,15 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
           updatedNpcs = [...updatedNpcs, ...newNpcsWithHiddenInfo];
       }
 
-      // 3b: Apply high-level updates from the scene and identify NPCs for mind simulation
       const npcIdsForMindUpdate = new Set<string>();
       if (nextScene.npcUpdates && nextScene.npcUpdates.length > 0) {
           nextScene.npcUpdates.forEach(update => {
               const npcIndex = updatedNpcs.findIndex(n => n.id === update.id);
               if (npcIndex !== -1) {
                   const oldNpc = updatedNpcs[npcIndex];
-
                   if (update.name && oldNpc.name !== update.name) {
                     newKeyEvents.push(`Bạn đã biết tên của người lạ: ${update.name}.`);
                   }
-
                   updatedNpcs[npcIndex] = { ...oldNpc, ...update };
                   if (update.state && oldNpc.state !== update.state) {
                      newKeyEvents.push(`Trạng thái của ${updatedNpcs[npcIndex].name} đã thay đổi thành ${update.state}.`);
@@ -422,14 +656,11 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
           });
       }
       
-      // 3c: Run the specialized mind update AI for each affected NPC
       if (npcIdsForMindUpdate.size > 0) {
         const mindUpdatePromises = Array.from(npcIdsForMindUpdate).map(async (npcId) => {
             const npcIndex = updatedNpcs.findIndex(n => n.id === npcId);
             const currentNpcState = updatedNpcs[npcIndex];
             const mindUpdate = await generateNpcMindUpdate(nextScene.sceneDescription, choice, currentNpcState);
-            
-            // Merge the deep psychological changes
             const finalNpc = { ...currentNpcState };
             if(mindUpdate.state) finalNpc.state = mindUpdate.state;
             if(mindUpdate.goal) finalNpc.goal = mindUpdate.goal;
@@ -443,23 +674,20 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
             }
             return { index: npcIndex, data: finalNpc };
         });
-
         const mindUpdateResults = await Promise.all(mindUpdatePromises);
         mindUpdateResults.forEach(result => {
             if (result) updatedNpcs[result.index] = result.data;
         });
       }
 
-      // 3d: Commit the final NPC state
       setNpcs(updatedNpcs);
+      setSurvivors(workingSurvivors);
       
-      // Batch update key events
       const currentKeyEvents = [...keyEvents, ...newKeyEvents];
       if (newKeyEvents.length > 0) {
         setKeyEvents(currentKeyEvents);
       }
 
-      // --- Step 4: Finalize Game Flow ---
       if (nextScene.isVictory) {
         setStoryHistory(prev => [...prev, nextScene.victoryText || "Bạn đã chiến thắng!"]);
         setTimeout(() => onVictory(nextScene.victoryText || "Cơn ác mộng đã kết thúc."), 3000);
@@ -471,14 +699,12 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
         setStoryHistory(prev => [...prev, nextScene.sceneDescription]);
       }
       
-      // Step 5: After all state updates, handle turn count and summarization
       const newTurnCount = turnCount + 1;
       setTurnCount(newTurnCount);
 
       if (newTurnCount > 0 && newTurnCount % 5 === 0) {
-          const eventsToSummarize = currentKeyEvents.slice(-10); // Summarize last 10 key events
+          const eventsToSummarize = currentKeyEvents.slice(-10); 
           if (eventsToSummarize.length > 0) {
-              // This is a background task, no need to await it
               generateSummary(eventsToSummarize).then(summary => {
                   setLoreSummaries(prev => [...prev, summary]);
               });
@@ -496,16 +722,28 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
     }
   };
   
-  const handlePlayerAction = (action: string) => {
-    if (!action.trim() || isLoading) return;
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!playerInput.trim() || isLoading) return;
+
+    let action = playerInput;
+    if (dialogueTarget) {
+      action = `Nói với ${dialogueTarget.name} (id: ${dialogueTarget.id}): "${playerInput}"`;
+      setDialogueTarget(null);
+    }
+    
     handleChoice(action);
     setPlayerInput('');
   };
 
-  const handleFormSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    handlePlayerAction(playerInput);
-  };
+  const interactableNpcs = React.useMemo(() => {
+    if (!scene?.interactableNpcIds) return [];
+    return scene.interactableNpcIds.map(id => npcs.find(n => n.id === id)).filter((n): n is NPC => !!n);
+  }, [scene, npcs]);
+
+  if (actTransition) {
+    return <ActTransitionScreen transition={actTransition} onContinue={handleContinueTransition} />;
+  }
 
   if (!scene) {
     return <div className="min-h-screen flex items-center justify-center"><LoadingIndicator /></div>;
@@ -551,10 +789,20 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
                   value={playerInput}
                   onChange={(e) => setPlayerInput(e.target.value)}
                   className="flex-grow bg-gray-900/50 border border-gray-700 text-gray-300 p-3 focus:outline-none focus:border-red-500 transition-colors rounded-l-md"
-                  placeholder="Bạn làm gì tiếp theo?"
+                  placeholder={dialogueTarget ? `Nói gì với ${dialogueTarget.name}?` : "Bạn làm gì tiếp theo?"}
                   disabled={isLoading}
                   aria-label="Nhập hành động của bạn"
                 />
+                 {dialogueTarget && (
+                    <button
+                      type="button"
+                      onClick={() => setDialogueTarget(null)}
+                      className="px-6 py-3 bg-transparent border border-gray-700 text-gray-400 hover:bg-gray-800 hover:text-white transition-all duration-300 rounded-r-md"
+                      aria-label="Hủy tương tác"
+                    >
+                      Hủy
+                    </button>
+                  )}
                 <button
                   type="submit"
                   className="px-6 py-3 bg-transparent border border-gray-700 text-gray-400 hover:bg-red-600 hover:text-black hover:border-red-600 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed rounded-r-md"
@@ -563,13 +811,13 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
                   Gửi
                 </button>
               </form>
-              {scene.choices.length > 0 && (
+              {scene.choices.length > 0 && !dialogueTarget && (
                 <div className="mt-3 flex flex-wrap gap-2">
                   <span className="text-sm text-gray-500 self-center mr-2">Gợi ý:</span>
                   {scene.choices.map((choice, index) => (
                     <button
                       key={index}
-                      onClick={() => handlePlayerAction(choice)}
+                      onClick={() => handleChoice(choice)}
                       disabled={isLoading}
                       className="px-3 py-1 text-sm border border-gray-800 bg-gray-900 text-gray-500 hover:bg-gray-800 hover:border-gray-600 hover:text-gray-300 transition-all duration-200 disabled:opacity-50 rounded-md"
                     >
@@ -578,6 +826,21 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
                   ))}
                 </div>
               )}
+               {interactableNpcs.length > 0 && !dialogueTarget && (
+                  <div className="mt-4 flex flex-wrap gap-2 items-center">
+                    <span className="text-sm text-gray-500 self-center mr-2">Tương tác:</span>
+                    {interactableNpcs.map((npc) => (
+                      <button
+                        key={npc.id}
+                        onClick={() => setDialogueTarget(npc)}
+                        disabled={isLoading}
+                        className="px-3 py-1 text-sm border border-gray-800 bg-gray-900 text-cyan-400 hover:bg-gray-800 hover:border-cyan-600 hover:text-cyan-300 transition-all duration-200 disabled:opacity-50 rounded-md"
+                      >
+                        Nói với {npc.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
             </div>
           )}
         </div>
@@ -585,8 +848,8 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
         {/* Action Bar */}
         <div className="w-full bg-black/50 p-2 rounded-lg border border-gray-900 mt-auto flex flex-wrap justify-center gap-1 sm:gap-2 sticky bottom-4 z-10 backdrop-blur-sm">
             <button onClick={() => setModalContent({ title: "HỒ SƠ CÁ NHÂN", content: <ProfileContent name={playerName} bio={playerBio} archetype={playerArchetype} stats={playerStats} />})} className="px-3 sm:px-4 py-2 text-sm border border-transparent hover:border-gray-700 text-gray-400 hover:text-white transition-colors">HỒ SƠ</button>
-            <button onClick={() => setModalContent({ title: "BỐI CẢNH BAN ĐẦU", content: <ContextContent description={currentSituation.situationDescription} />})} className="px-3 sm:px-4 py-2 text-sm border border-transparent hover:border-gray-700 text-gray-400 hover:text-white transition-colors">BỐI CẢNH</button>
-            <button onClick={() => setModalContent({ title: "NHẬT KÝ", content: <JournalContent summaries={loreSummaries} entries={loreEntries} />})} className="px-3 sm:px-4 py-2 text-sm border border-transparent hover:border-gray-700 text-gray-400 hover:text-white transition-colors">NHẬT KÝ</button>
+            <button onClick={() => setModalContent({ title: "TRẠNG THÁI NHÓM", content: <GroupContent survivors={survivors} />})} className="px-3 sm:px-4 py-2 text-sm border border-transparent hover:border-gray-700 text-gray-400 hover:text-white transition-colors">NHÓM</button>
+            <button onClick={() => setModalContent({ title: "HỒ SƠ VỤ VIỆC", content: <CaseFileContent situation={currentSituation} summaries={loreSummaries} entries={loreEntries} discoveredLore={discoveredLore} />})} className="px-3 sm:px-4 py-2 text-sm border border-transparent hover:border-gray-700 text-gray-400 hover:text-white transition-colors">HỒ SƠ VỤ VIỆC</button>
             <button onClick={() => setModalContent({ title: "NHIỆM VỤ & MANH MỐI", content: <QuestContent mainQuest={mainQuest} sideQuests={sideQuests} knownClues={knownClues} />})} className="px-3 sm:px-4 py-2 text-sm border border-transparent hover:border-gray-700 text-gray-400 hover:text-white transition-colors">NHIỆM VỤ</button>
             <button onClick={() => setModalContent({ title: "CÁC QUY TẮC ĐÃ BIẾT", content: (
                 knownRules.length > 0 ? (
@@ -602,13 +865,6 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
                     </ul>
                 ) : <p className="text-gray-600 italic">Túi đồ trống rỗng.</p>
             )})} className="px-3 sm:px-4 py-2 text-sm border border-transparent hover:border-gray-700 text-gray-400 hover:text-white transition-colors">VẬT PHẨM</button>
-             <button onClick={() => setModalContent({ title: "KHÁM PHÁ", content: (
-                discoveredLore.length > 0 ? (
-                    <ul className="space-y-3">
-                        {discoveredLore.map((lore, index) => <li key={index} className="text-gray-500 italic">"{lore}"</li>)}
-                    </ul>
-                ) : <p className="text-gray-600 italic">Những bí mật vẫn còn ẩn giấu.</p>
-            )})} className="px-3 sm:px-4 py-2 text-sm border border-transparent hover:border-gray-700 text-gray-400 hover:text-white transition-colors">KHÁM PHÁ</button>
             <button onClick={() => setModalContent({ title: "NHÂN VẬT", content: <NPCContent npcs={npcs} /> })} className="px-3 sm:px-4 py-2 text-sm border border-transparent hover:border-gray-700 text-gray-400 hover:text-white transition-colors">NHÂN VẬT</button>
             <button onClick={handleSave} className="px-3 sm:px-4 py-2 text-sm border border-transparent hover:border-gray-700 text-gray-400 hover:text-white transition-colors">LƯU & THOÁT</button>
         </div>

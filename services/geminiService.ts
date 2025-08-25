@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type, GenerateContentResponse } from '@google/genai';
-import { InitialSituation, Scene, PlayerStats, Item, NPC, WorldState, NPCState, Difficulty } from '../types';
+import { InitialSituation, Scene, PlayerStats, Item, NPC, WorldState, NPCState, Difficulty, SurvivorStatus, Survivor, ActTransition, WorldLore } from '../types';
 
 // Helper types for API response before conversion
 type ApiWorldState = Array<{ key: string; value: string; }>;
@@ -7,11 +7,14 @@ type ApiWorldState = Array<{ key: string; value: string; }>;
 // Omit the properties we're changing the type of, then add the new type
 type ApiInitialSituation = Omit<InitialSituation, 'worldState'> & {
   worldState: ApiWorldState;
+  survivors: { name: string, status: string }[]; // Status is string for API
 };
 
-type ApiScene = Omit<Scene, 'worldStateChanges'> & {
+type ApiScene = Omit<Scene, 'worldStateChanges' | 'survivorUpdates'> & {
   worldStateChanges?: ApiWorldState;
+  survivorUpdates?: { name: string; newStatus: string; reason?: string }[];
 };
+
 
 // This type represents the output from the specialized NPC mind update AI call.
 export type NpcMindUpdate = {
@@ -118,6 +121,7 @@ function convertSchema(schema: any): any {
 const npcProperties = {
   id: { type: "string", description: "Một ID duy nhất cho NPC, ví dụ: 'npc_1'." },
   name: { type: "string", description: "Tên của NPC." },
+  personality: { type: "string", description: "Một mô tả ngắn gọn về tính cách cốt lõi, BẤT BIẾN của NPC. Ví dụ: 'Nhát gan và hoang tưởng', 'Thực dụng và tàn nhẫn', 'Lạc quan một cách nguy hiểm'." },
   description: { type: "string", description: "Mô tả chi tiết về ngoại hình và hành vi ban đầu của NPC." },
   background: { type: "string", description: "Câu chuyện quá khứ, lai lịch của NPC. Điều gì đã đưa họ đến nơi này?" },
   goal: { type: "string", description: "Mục tiêu hoặc động cơ bí mật của NPC là gì? (ví dụ: 'Tìm kiếm người anh em đã mất', 'Chỉ muốn sống sót bằng mọi giá', 'Thực hiện một nghi lễ bí ẩn')." },
@@ -127,23 +131,27 @@ const npcProperties = {
   lastInteractionSummary: { type: "string", description: "Tóm tắt tương tác cuối. Để trống lúc bắt đầu." }
 };
 
+const worldLoreProperties = {
+    type: "object",
+    description: "Bối cảnh chi tiết của thế giới. Lịch sử của nó, thực thể ám ảnh nó, và nguồn gốc của các quy tắc.",
+    properties: {
+        whatItWas: { type: "string", description: "Viết một đoạn văn tường thuật mô tả nơi này đã từng là gì, tập trung vào không khí và cảm giác của nó trước bi kịch (ví dụ: 'Một cô nhi viện hẻo lánh cho những đứa trẻ đặc biệt', 'Ngọn hải đăng canh giữ một vùng biển nguy hiểm')." },
+        whatHappened: { type: "string", description: "Kể lại chi tiết bi kịch đã xảy ra như một câu chuyện ngắn. Ai liên quan? Điều gì đã xảy ra? Hậu quả là gì? Hãy viết một cách bi thảm và bí ẩn." },
+        entityName: { type: "string", description: "Tên hoặc danh xưng đầy ám ảnh của thực thể/nguồn gốc nỗi sợ (ví dụ: 'Người Gác Đèn Câm Lặng', 'Cái Bóng Cười', 'Bản Giao Hưởng Của Sự Im Lặng')." },
+        entityDescription: { type: "string", description: "Mô tả chi tiết, giàu giác quan (hình dáng, âm thanh, mùi vị) về thực thể. Tập trung vào những chi tiết gây bất an và chỉ có MỘT năng lực siêu nhiên duy nhất." },
+        entityMotivation: { type: "string", description: "Động cơ sâu xa của thực thể là gì? Nó không chỉ muốn gì, mà tại sao nó lại muốn điều đó? (ví dụ: 'Nó tìm kiếm một giọng nói để thay thế giọng nói đã mất', 'Nó muốn kéo tất cả mọi người vào sự im lặng vĩnh cửu của nó')." },
+        rulesOrigin: { type: "string", description: "Một lời giải thích có tính tường thuật về nguồn gốc của các quy tắc, gắn liền với bi kịch hoặc bản chất của thực thể. (ví dụ: 'Chúng là những lời cuối cùng của nạn nhân, giờ đây đã trở thành luật lệ của nơi này')." },
+        mainSymbol: { type: "string", description: "Một biểu tượng hoặc vật thể lặp đi lặp lại. Mô tả nó và ý nghĩa của nó trong câu chuyện của nơi này (ví dụ: 'Những con búp bê vải không có mắt', 'Một chiếc đồng hồ quả lắc bị kẹt ở 3:33', 'Những vết nứt trên tường trông giống như nốt nhạc')." },
+        keyLoreKeywords: { type: "array", items: { type: "string" }, description: "Một danh sách từ 5-7 từ khóa cốt lõi, đơn lẻ (tên riêng, địa điểm, vật thể) là chìa khóa để khám phá toàn bộ bi kịch." }
+    },
+};
+
+
 const initialSituationSchema = {
   type: "object",
   properties: {
     situationDescription: { type: "string", description: 'Một đoạn văn mô tả nơi người chơi đang ở. Nó phải kỳ lạ, đáng lo ngại và bí ẩn, được viết theo phong cách văn học.' },
-    worldLore: {
-      type: "object",
-      description: "Bối cảnh chi tiết của thế giới. Lịch sử của nó, thực thể ám ảnh nó, và nguồn gốc của các quy tắc.",
-      properties: {
-        whatItWas: { type: "string", description: "Viết một đoạn văn tường thuật mô tả nơi này đã từng là gì, tập trung vào không khí và cảm giác của nó trước bi kịch (ví dụ: 'Một cô nhi viện hẻo lánh cho những đứa trẻ đặc biệt', 'Ngọn hải đăng canh giữ một vùng biển nguy hiểm')." },
-        whatHappened: { type: "string", description: "Kể lại chi tiết bi kịch đã xảy ra như một câu chuyện ngắn. Ai liên quan? Điều gì đã xảy ra? Hậu quả là gì? Hãy viết một cách bi thảm và bí ẩn." },
-        entityName: { type: "string", description: "Tên hoặc danh xưng đầy ám ảnh của thực thể/nguồn gốc nỗi sợ (ví dụ: 'Người Gác Đèn Câm Lặng', 'Cái Bóng Cười', 'Bản Giao Hưởng Của Sự Im Lặng')." },
-        entityDescription: { type: "string", description: "Mô tả chi tiết, giàu giác quan (hình dáng, âm thanh, mùi vị) về thực thể. Tập trung vào những chi tiết gây bất an." },
-        entityMotivation: { type: "string", description: "Động cơ sâu xa của thực thể là gì? Nó không chỉ muốn gì, mà tại sao nó lại muốn điều đó? (ví dụ: 'Nó tìm kiếm một giọng nói để thay thế giọng nói đã mất', 'Nó muốn kéo tất cả mọi người vào sự im lặng vĩnh cửu của nó')." },
-        rulesOrigin: { type: "string", description: "Một lời giải thích có tính tường thuật về nguồn gốc của các quy tắc, gắn liền với bi kịch hoặc bản chất của thực thể. (ví dụ: 'Chúng là những lời cuối cùng của nạn nhân, giờ đây đã trở thành luật lệ của nơi này')." },
-        mainSymbol: { type: "string", description: "Một biểu tượng hoặc vật thể lặp đi lặp lại. Mô tả nó và ý nghĩa của nó trong câu chuyện của nơi này (ví dụ: 'Những con búp bê vải không có mắt', 'Một chiếc đồng hồ quả lắc bị kẹt ở 3:33', 'Những vết nứt trên tường trông giống như nốt nhạc')." }
-      },
-    },
+    worldLore: worldLoreProperties,
     rulesSource: { type: "string", description: 'Người chơi tìm thấy các quy tắc như thế nào? (ví dụ: "một tờ giấy ghi chú dính máu", "một giọng nói máy móc từ loa", "chữ khắc trên tường").' },
     rules: {
       type: "array",
@@ -163,6 +171,17 @@ const initialSituationSchema = {
         type: "object",
         properties: npcProperties
       }
+    },
+    survivors: {
+        type: "array",
+        description: `Danh sách đầy đủ từ 5 đến 12 thành viên trong nhóm sinh tồn. Tên của các NPC chi tiết phải có trong danh sách này. Trạng thái ban đầu luôn là '${SurvivorStatus.ALIVE}'.`,
+        items: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            status: { type: "string", description: `Trạng thái ban đầu, ví dụ: '${SurvivorStatus.ALIVE}'.` }
+          }
+        }
     },
     worldState: {
       type: "array",
@@ -224,7 +243,7 @@ const sceneSchema = {
         },
         newItem: {
             type: "object",
-            description: "Một vật phẩm đặc biệt mà người chơi tìm thấy trong cảnh này. Để trống nếu không có.",
+            description: "Một vật phẩm đặc biệt hoặc Đạo Cụ mà người chơi tìm thấy. Để trống nếu không có.",
             properties: {
                 name: { type: "string" },
                 description: { type: "string" }
@@ -233,6 +252,10 @@ const sceneSchema = {
         itemUsed: {
             type: "string",
             description: "Tên của vật phẩm đã được sử dụng để thực hiện hành động này. Chỉ điền vào nếu một vật phẩm đã bị tiêu thụ."
+        },
+        itemBroken: {
+            type: "string",
+            description: "Tên của vật phẩm đã bị hỏng sau khi sử dụng. Chỉ điền vào nếu vật phẩm bị phá hủy."
         },
         newLoreSnippet: {
             type: "string",
@@ -266,6 +289,18 @@ const sceneSchema = {
             properties: npcProperties
           }
         },
+        survivorUpdates: {
+            type: "array",
+            description: "Cập nhật trạng thái cho các thành viên trong nhóm. Chỉ bao gồm những người có thay đổi. Rất quan trọng để ghi lại cái chết.",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string", description: "Tên của thành viên nhóm đã thay đổi trạng thái." },
+                newStatus: { type: "string", description: `Trạng thái mới. Chọn từ: ${Object.values(SurvivorStatus).join(', ')}.` },
+                reason: { type: "string", description: "Mô tả ngắn gọn nguyên nhân của sự thay đổi (ví dụ: 'Bị thực thể tấn công', 'Chết vì vi phạm quy tắc X')." }
+              }
+            }
+        },
         worldStateChanges: {
           type: "array",
           description: "Những thay đổi đối với trạng thái thế giới dưới dạng danh sách key-value. Chỉ bao gồm các khóa đã thay đổi. Ví dụ: [{ key: 'power_on', value: 'false' }].",
@@ -280,7 +315,22 @@ const sceneSchema = {
         mainQuestUpdate: { type: "string", description: "Cập nhật mục tiêu chính nếu nhiệm vụ hiện tại đã hoàn thành hoặc có một bước ngoặt lớn. Chỉ điền vào nếu mục tiêu chính thay đổi." },
         newSideQuests: { type: "array", items: { type: "string" }, description: "Một danh sách các nhiệm vụ phụ mới, nhỏ hơn xuất hiện. Ví dụ: 'Tìm băng ghi âm của nhân viên bảo vệ'." },
         completedQuests: { type: "array", items: { type: "string" }, description: "Một danh sách các nhiệm vụ phụ mà người chơi đã hoàn thành trong cảnh này. Tên nhiệm vụ phải khớp chính xác với nhiệm vụ đã được giao trước đó." },
-        newClues: { type: "array", items: { type: "string" }, description: "Một danh sách các manh mối quan trọng, có thể hành động mà người chơi đã khám phá. Ví dụ: 'Mật mã của chiếc két sắt là ngày sinh của người gác đèn'." }
+        newClues: { type: "array", items: { type: "string" }, description: "Một danh sách các manh mối quan trọng, có thể hành động mà người chơi đã khám phá. Ví dụ: 'Mật mã của chiếc két sắt là ngày sinh của người gác đèn'." },
+        actTransition: {
+            type: "object",
+            description: "Điền vào đối tượng này NẾU VÀ CHỈ NẾU hành động của người chơi hoàn thành nhiệm vụ chính và bắt đầu một chương mới của câu chuyện. Nếu không, hãy để trống.",
+            properties: {
+                summaryOfCompletedAct: { type: "string", description: "Một đoạn văn tóm tắt mang tính tường thuật về chương vừa kết thúc và những gì người chơi đã đạt được." },
+                nextActDescription: { type: "string", description: "Một đoạn văn mô tả sự chuyển đổi sang khu vực/tình huống mới. Tạo ra một sự thay đổi kịch tính." },
+                newMainQuest: { type: "string", description: "Nhiệm vụ chính MỚI cho chương tiếp theo." },
+                newRules: { type: "array", items: { type: "string" }, description: "Danh sách các quy tắc mới (từ bộ quy tắc cố định) mà người chơi khám phá ra khi bước vào khu vực mới." },
+            }
+        },
+        interactableNpcIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Một danh sách các ID của NPC (ví dụ: ['npc_1']) có mặt và có thể tương tác trong cảnh này. Chỉ bao gồm các NPC mà người chơi có thể nói chuyện trực tiếp. Nếu không có ai, hãy để trống mảng này."
+        },
     },
 };
 
@@ -341,8 +391,8 @@ async function callGemini<T>(prompt: string, schema: any, temperature: number = 
   }
 }
 
-export async function generateInitialSituation(playerName: string, playerBio: string, playerArchetype: string, echoes: string[], difficulty: Difficulty): Promise<InitialSituation> {
-  const echoesPrompt = echoes.length > 0
+const baseInitialSituationPrompt = (playerName: string, playerBio: string, playerArchetype: string, difficulty: Difficulty, echoes: string[]) => {
+    const echoesPrompt = echoes.length > 0
     ? `**YÊU CẦU TỪ VỌNG ÂM:**
 Những nạn nhân trước đây đã để lại những lời cảnh báo. Hãy chọn MỘT trong những "vọng âm" sau đây và dệt nó vào thế giới một cách tinh tế. Nó có thể là một dòng chữ nguệch ngoạc trên tường, một ghi chú trong túi của một cái xác, hoặc một phần của lore. Đừng nói rõ đây là một lời cảnh báo từ lần chơi trước.
 Vọng ÂM:
@@ -357,391 +407,229 @@ ${echoes.map(e => `- "${e}"`).join('\n')}
 - **${Difficulty.HARD}:** Chỉ cung cấp 1 quy tắc ban đầu, hoặc thậm chí không có quy tắc nào nếu nó phù hợp với câu chuyện. Các quy tắc nên khó hiểu hơn. NPC có thể khởi đầu ở trạng thái bất ổn hoặc thù địch. Tình huống ban đầu nguy hiểm hơn.
 `;
 
-  const prompt = `Bạn là một đạo diễn/tiểu thuyết gia kinh dị bậc thầy. Nhiệm vụ của bạn là tạo ra một kịch bản mở đầu cực kỳ chi tiết, có chiều sâu cho một trò chơi RPG kinh dị.
+  return `Bạn là **Kiến Trúc Sư Của Ác Mộng**. Bạn không phải là một người kể chuyện, bạn là một vị thần sáng tạo ra những thực tại rạn nứt. Nhiệm vụ của bạn là xây dựng một thế giới kinh dị tâm lý hoàn chỉnh và logic từ hư không. Mọi yếu tố—từ bi kịch cốt lõi, thực thể ám ảnh, đến từng quy tắc tàn nhẫn—đều phải là một phần của một tổng thể nhất quán. Vai trò của bạn kết thúc khi nền móng được đặt xong. Bạn tạo ra sân chơi, nhưng không bao giờ tham gia vào trò chơi.
+
+**TRỌNG TÂM CỐT LÕI: MÔ PHỎNG MỘT NHÓM SINH TỒN**
+Người chơi (${playerName}) không đơn độc. Họ là một phần của một nhóm từ 5 đến 12 người sống sót bị mắc kẹt cùng nhau. Đây là yếu tố quan trọng nhất.
+
+**HAI QUY TẮC NGẦM CỦA THỰC TẠI NÀY:**
+1.  **CÁI CHẾT LÀ BẮT BUỘC:** Phải có người chết. Nếu nhóm vượt qua một thử thách lớn hoặc giải quyết một bí ẩn quan trọng mà không có ai hy sinh, thực thể sẽ tức giận và đòi một mạng sống. Đây là cái giá của sự tiến bộ.
+2.  **CÁI GIÁ CỦA CHIẾN THẮNG "HOÀN HẢO":** Nếu nhóm thành công một cách thần kỳ trước khi có ai chết, lời nguyền sẽ tự động chọn một người "đóng góp ít nhất" (có thể là người nhút nhát nhất, người liều lĩnh nhất, hoặc người kém may mắn nhất) để chết. Không có chiến thắng nào là không có mất mát.
+
+**QUY TẮC VỀ THỰC THỂ (QUAN TRỌNG):**
+1.  **Một Thực Thể Duy Nhất:** Chỉ tạo ra **MỘT** thực thể (con ma) duy nhất cho kịch bản này.
+2.  **Một Năng Lực Duy Nhất:** Thực thể này chỉ được sở hữu **MỘT** năng lực siêu nhiên cốt lõi và duy nhất (ví dụ: thao túng âm thanh, tạo ảo giác, di chuyển đồ vật). Hãy mô tả rõ năng lực này trong \`entityDescription\` và làm cho nó trở thành trung tâm của các thử thách. Tuyệt đối không tạo ra nhiều hơn một thực thể.
+3.  **THỰC THỂ CÂM LẶNG (RẤT QUAN TRỌNG):** Thực thể này **KHÔNG THỂ** nói, thì thầm, la hét hay giao tiếp bằng lời nói dưới bất kỳ hình thức nào. Nó hoàn toàn câm lặng. Động cơ và tâm nguyện của nó phải được suy ra từ hành động và manh mối mà người chơi tìm thấy. Do đó, \`mainQuest\` phải tập trung vào việc điều tra: "Tìm hiểu xem thực thể muốn gì" hoặc "Khám phá sự thật đằng sau bi kịch".
 
 ${difficultyPrompt}
 
 ${echoesPrompt}
 
-**THÔNG TIN NGƯỜI CHƠI:**
+**THÔNG TIN NGƯÖI CHƠI:**
 - **Tên:** ${playerName}
 - **Tiểu sử:** ${playerBio}
 - **Hành vi ban đầu (Tâm lý):** "${playerArchetype}"
 
-**YÊU CẦU CỐT LÕI: KẾT NỐI CÁ NHÂN (NÂNG CAO)**
-Người chơi không phải là một người lạ. Hãy dệt tên và tiểu sử của họ vào chính cốt lõi của bi kịch.
-- **Mối liên kết Tên:** Có thể một nhân vật quan trọng trong bi kịch có cùng tên, hoặc tên của họ xuất hiện trong một tài liệu cũ.
+**YÊU CẦU KẾT NỐI CÁ NHÂN (NÂNG CAO):**
+Hãy dệt tên và tiểu sử của ${playerName} vào cốt lõi của bi kịch.
+- **Mối liên kết Tên:** Một nhân vật quan trọng trong bi kịch có cùng tên, hoặc tên của họ xuất hiện trong một tài liệu cũ.
 - **Mối liên kết Tiểu sử:** Một chi tiết trong tiểu sử của họ có sự tương đồng kỳ lạ với một sự kiện trong quá khứ của nơi này.
-- **Mối liên kết Tâm lý:** Nhân vật chính của bi kịch phải có hành động và tâm lý giống với "${playerArchetype}". Lời nguyền nhận ra họ.
+- **Mối liên kết Tâm lý:** Nhân vật chính của bi kịch của nhân vật chính trong bi kịch có hành động tương tự như "${playerArchetype}" trong một tình huống nguy cấp.
 
-**YÊU CẦU MỚI: THẾ GIỚI SỐNG**
-1.  **NPC Sống Động:** Tạo ra 5 NPC thú vị với hồ sơ tâm lý đầy đủ. Họ là những người sống sót khác với quá khứ (\`background\`), mục tiêu (\`goal\`), và trạng thái ban đầu (\`currentStatus\`) riêng.
-2.  **Trạng thái Thế giới:** Tạo ra một trạng thái ban đầu cho thế giới. Ví dụ: nguồn điện vẫn còn, một cánh cửa chính đang hé mở, v.v.
-3.  **Theo dõi NPC được giới thiệu:** BẮT BUỘC: Đối với mỗi NPC được giới thiệu trong \`firstScene.sceneDescription\`, hãy thêm ID của họ vào mảng \`firstScene.introducedNpcIds\`. Nếu không có NPC nào xuất hiện trong cảnh đầu tiên, hãy để mảng đó trống.
-
-**PHONG CÁCH KINH DỊ (KẾT HỢP CẢ BA):**
-1.  **Tâm lý ngột ngạt (Phong cách "Quỷ Xá"):** Tạo ra một lời nguyền sinh ra từ bi kịch và hận thù, gắn chặt với một địa điểm.
-2.  **Kinh dị biểu tượng (Phong cách "Thế giới sương mù"):** Nơi chốn này là hiện thân của bi kịch đã xảy ra.
-3.  **Kỹ thuật điện ảnh (Phong cách "Rạp chiếu phim kinh dị"):** "Đạo diễn" bằng ngôn từ, tập trung vào âm thanh, ánh sáng và nhịp độ.
-
-**Ý TƯỞỞNG BỐI CẢNH (Hãy chọn và kết hợp các yếu tố sau):**
-- **Không gian:** thị trấn bỏ hoang, bệnh viện tâm thần cũ, khu rừng sương mù, làng chài ven biển bị nguyền rủa.
-- **Nguồn gốc nỗi sợ:** siêu nhiên (lời nguyền, ma oán) hoặc con người (giáo phái, tội ác bị che giấu).
-
-**CHI TIẾT BỐI CẢNH (LORE) - YÊU CẦU QUAN TRỌNG:**
-- **whatItWas:** Gợi lên một ký ức sống động về nơi này TRƯỚC KHI bi kịch xảy ra.
-- **whatHappened:** Viết một câu chuyện ngắn hoàn chỉnh về bi kịch. **Nhân vật chính của bi kịch này phải là một người có hành động và tâm lý giống với "${playerArchetype}".** Hành động của họ chính là nguyên nhân trực tiếp hoặc gián tiếp dẫn đến thảm họa.
-- **entityName:** Một cái tên gợi lên bi kịch hoặc bản chất biểu tượng của nó.
-- **entityDescription:** Mô tả thực thể như một biểu tượng sống của bi kịch. Nó có thể là hiện thân của nhân vật đã hành xử như một "${playerArchetype}" trong quá khứ.
-- **entityMotivation:** Động cơ của nó phải bắt nguồn trực tiếp từ bi kịch. Có thể nó đang cố gắng "sửa chữa" hoặc "tái hiện" lại sai lầm của "${playerArchetype}" trong quá khứ một cách bệnh hoạn.
-- **rulesOrigin:** Các quy tắc là "vết sẹo" của bi kịch, sinh ra từ hành động của "${playerArchetype}" trong quá khứ.
-- **mainSymbol:** Biểu tượng trung tâm của nơi này, liên quan mật thiết đến bi kịch và "${playerArchetype}".
-
-**HỆ THỐNG QUY TẮC:**
-1.  Tạo ra một bộ quy tắc đầy đủ và CỐ ĐỊNH (\`allRules\`, 5-7 quy tắc).
-2.  Chọn ra 1-3 quy tắc để gợi ý ban đầu (\`rules\`).
-
-Hãy tạo ra một đối tượng JSON hoàn chỉnh tuân thủ schema đã cung cấp.`;
-
-  try {
-    const apiResponse = await callGemini<ApiInitialSituation>(prompt, initialSituationSchema, 0.9);
-    const situation: InitialSituation = {
-      ...apiResponse,
-      worldState: convertApiWorldStateToObject(apiResponse.worldState),
-    };
-    return situation;
-  } catch (error) {
-    console.error("Error generating initial situation:", error);
-    if (error instanceof Error) throw error;
-    throw new Error("Hư không đáp lại bằng một lỗi. Không thể tạo ra thế giới.");
-  }
+Bây giờ, hãy tạo ra kịch bản mở đầu chi tiết dựa trên các thông tin trên.`;
 }
 
-export async function generateInitialLore(answers: { [key: number]: string }, playerName: string, playerBio: string, playerArchetype: string, echoes: string[], difficulty: Difficulty): Promise<InitialSituation> {
-  const echoesPrompt = echoes.length > 0
-    ? `**YÊU CẦU TỪ VỌNG ÂM:**
-Những nạn nhân trước đây đã để lại những lời cảnh báo. Hãy chọn MỘT trong những "vọng âm" sau đây và dệt nó vào thế giới một cách tinh tế. Nó có thể là một dòng chữ nguệch ngoạc trên tường, một ghi chú trong túi của một cái xác, hoặc một phần của lore. Đừng nói rõ đây là một lời cảnh báo từ lần chơi trước.
-Vọng Âm:
-${echoes.map(e => `- "${e}"`).join('\n')}
-`
-    : "";
-    
-  const difficultyPrompt = `
-**ĐỘ KHÓ: ${difficulty}**
-- **${Difficulty.EASY}:** Tạo ra một kịch bản ít trừng phạt hơn. Cung cấp 2-3 quy tắc ban đầu. NPC khởi đầu có thể thân thiện hoặc trung lập hơn. Mối đe dọa ban đầu ít trực tiếp hơn.
-- **${Difficulty.NORMAL}:** Cung cấp 1-2 quy tắc ban đầu. Tạo ra một kịch bản đầy thử thách nhưng công bằng.
-- **${Difficulty.HARD}:** Chỉ cung cấp 1 quy tắc ban đầu, hoặc thậm chí không có quy tắc nào nếu nó phù hợp với câu chuyện. Các quy tắc nên khó hiểu hơn. NPC có thể khởi đầu ở trạng thái bất ổn hoặc thù địch. Tình huống ban đầu nguy hiểm hơn.
+export async function generateInitialSituation(playerName: string, playerBio: string, playerArchetype: string, echoes: string[], difficulty: Difficulty): Promise<InitialSituation> {
+  const prompt = baseInitialSituationPrompt(playerName, playerBio, playerArchetype, difficulty, echoes);
+
+  const apiResponse = await callGemini<ApiInitialSituation>(prompt, initialSituationSchema, 1.0);
+
+  // Convert API response to application's data structure
+  return {
+    ...apiResponse,
+    worldState: convertApiWorldStateToObject(apiResponse.worldState),
+    survivors: apiResponse.survivors.map(s => ({ ...s, status: s.status as SurvivorStatus }))
+  };
+}
+
+export async function generateInitialLore(worldBuildingAnswers: { [key: number]: string }, playerName: string, playerBio: string, playerArchetype: string, echoes: string[], difficulty: Difficulty): Promise<InitialSituation> {
+    const worldPrompt = `
+**DỮ LIỆU KIẾN TẠO THẾ GIỚI TỪ NGƯÖI CHƠI:**
+1. Cái bóng dài nhất được tạo ra bởi: "${worldBuildingAnswers[0]}"
+2. Tên của sinh vật ẩn nấp: "${worldBuildingAnswers[1]}"
+3. Quy tắc quan trọng đã bị lãng quên: "${worldBuildingAnswers[2]}"
+
+**YÊU CẦU:**
+Hãy sử dụng ba câu trả lời trên làm nền tảng cốt lõi để xây dựng toàn bộ thế giới.
+- Câu trả lời 1 phải là một phần quan trọng của bối cảnh hoặc biểu tượng chính ('mainSymbol').
+- Câu trả lời 2 phải là tên của thực thể ('entityName').
+- Câu trả lời 3 phải là một trong những quy tắc trong danh sách 'allRules'.
+
+Hãy dệt những yếu tố này vào một câu chuyện bi kịch hoàn chỉnh và nhất quán.
 `;
-  
-  const prompt = `Bạn là một đạo diễn/tiểu thuyết gia kinh dị bậc thầy. Hãy tạo ra một kịch bản mở đầu cực kỳ chi tiết cho một trò chơi RPG, dựa trên những ý tưởng sau từ người chơi:
-  
-  1. Cái bóng dài nhất được tạo ra bởi: "${answers[0]}"
-  2. Sinh vật trong bóng tối được gọi là: "${answers[1]}"
-  3. Quy tắc bị lãng quên là: "${answers[2]}"
 
-  ${difficultyPrompt}
+    const prompt = baseInitialSituationPrompt(playerName, playerBio, playerArchetype, difficulty, echoes) + worldPrompt;
 
-  ${echoesPrompt}
-
-  **THÔNG TIN NGƯỜI CHƠI:**
-  - **Tên:** ${playerName}
-  - **Tiểu sử:** ${playerBio}
-  - **Hành vi ban đầu (Tâm lý):** "${playerArchetype}"
-
-  **YÊU CẦU CỐT LÕI: KẾT NỐI CÁ NHÂN (NÂNG CAO)**
-  Người chơi không phải là một người lạ. Hãy dệt tên và tiểu sử của họ vào chính cốt lõi của bi kịch bạn sắp tạo ra.
-  - **Mối liên kết Tên:** Có thể một nhân vật quan trọng trong bi kịch có cùng tên, hoặc tên của họ xuất hiện trong một tài liệu cũ.
-  - **Mối liên kết Tiểu sử:** Một chi tiết trong tiểu sử của họ có sự tương đồng kỳ lạ với một sự kiện trong quá khứ của nơi này.
-  - **Mối liên kết Tâm lý:** Nhân vật chính của bi kịch phải có hành động và tâm lý giống với "${playerArchetype}". Lời nguyền nhận ra họ.
-
-  **YÊU CẦU MỚI: THẾ GIỚI SỐNG**
-  1.  **NPC Sống Động:** Tạo ra 5 NPC thú vị với hồ sơ tâm lý đầy đủ, có liên quan đến câu chuyện bạn đang xây dựng từ câu trả lời của người chơi.
-  2.  **Trạng thái Thế giới:** Tạo ra một trạng thái ban đầu cho thế giới, phản ánh bối cảnh bạn tạo ra.
-  3.  **Theo dõi NPC được giới thiệu:** BẮT BUỘC: Đối với mỗi NPC được giới thiệu trong \`firstScene.sceneDescription\`, hãy thêm ID của họ vào mảng \`firstScene.introducedNpcIds\`. Nếu không có NPC nào xuất hiện trong cảnh đầu tiên, hãy để mảng đó trống.
-
-  Hãy dệt những ý tưởng này thành một thế giới độc đáo và đáng sợ, kết hợp nhuần nhuyễn 3 phong cách: Tâm lý ngột ngạt ("Quỷ Xá"), Kinh dị biểu tượng ("Thế giới sương mù"), và Kỹ thuật điện ảnh.
-  
-  **CHI TIẾT BỐI CẢNH (LORE) - YÊU CẦU QUAN TRỌNG:**
-  - **whatItWas:** Gợi lên một ký ức sống động về nơi này TRƯỚC KHI bi kịch liên quan đến "${answers[0]}" xảy ra.
-  - **whatHappened:** Viết một câu chuyện ngắn kinh hoàng về bi kịch, trong đó "${answers[0]}" và một nhân vật có tâm lý giống "${playerArchetype}" đóng vai trò trung tâm. Hành động của người này đã sinh ra lời nguyền và thực thể "${answers[1]}".
-  - **entityName:** "${answers[1]}"
-  - **entityDescription:** Mô tả thực thể "${answers[1]}" như một biểu tượng sống của bi kịch. Nó có liên quan đến cái bóng từ "${answers[0]}" và hành động của "${playerArchetype}" trong quá khứ không?
-  - **entityMotivation:** Động cơ của "${answers[1]}" phải bắt nguồn từ bi kịch, liên quan đến hành động của "${playerArchetype}" trong quá khứ.
-  - **rulesOrigin:** Các quy tắc là "vết sẹo" của bi kịch. "Quy tắc bị lãng quên" (${answers[2]}) có vai trò then chốt như thế nào trong câu chuyện này, và nó liên quan gì đến "${playerArchetype}"?
-  - **mainSymbol:** Tạo ra một biểu tượng chính liên quan đến cả ba câu trả lời của người chơi và "${playerArchetype}", và giải thích ý nghĩa của nó.
-  
-  **HỆ THỐNG QUY TẮC:**
-1.  Tạo ra một bộ quy tắc đầy đủ và CỐ ĐỊNH (\`allRules\`, 5-7 quy tắc), trong đó có chứa "Quy tắc bị lãng quên": "${answers[2]}".
-2.  Từ bộ quy tắc đó, chọn ra 1-3 quy tắc để gợi ý ban đầu (\`rules\`). Quy tắc bị lãng quên không nên nằm trong danh sách này.
-  
-  Hãy tạo ra một đối tượng JSON hoàn chỉnh tuân thủ schema đã cung cấp.`;
-
-  try {
-    const apiResponse = await callGemini<ApiInitialSituation>(prompt, initialSituationSchema, 0.9);
-    const situation: InitialSituation = {
+    const apiResponse = await callGemini<ApiInitialSituation>(prompt, initialSituationSchema, 1.0);
+    
+    // Convert API response to application's data structure
+    return {
         ...apiResponse,
         worldState: convertApiWorldStateToObject(apiResponse.worldState),
+        survivors: apiResponse.survivors.map(s => ({ ...s, status: s.status as SurvivorStatus }))
     };
-    return situation;
-  } catch (error) {
-    console.error("Error generating initial lore:", error);
-    if (error instanceof Error) throw error;
-    throw new Error("Hư không đáp lại bằng một lỗi. Không thể tạo ra thế giới dựa trên câu trả lời của bạn.");
-  }
 }
-
 
 export async function generateNextScene(
-  situation: InitialSituation, 
-  storyHistory: string[], 
-  knownRules: string[], 
-  playerChoice: string, 
-  playerStats: PlayerStats, 
-  playerInventory: Item[], 
-  npcs: NPC[], 
-  worldState: WorldState, 
-  keyEvents: string[],
-  mainQuest: string,
-  sideQuests: string[],
-  knownClues: string[],
-  loreSummaries: string[],
-  loreEntries: string[],
-  playerName: string,
-  playerBio: string,
-  playerArchetype: string,
-  difficulty: Difficulty,
-  turnCount: number
+    situation: InitialSituation,
+    history: string[],
+    knownRules: string[],
+    playerChoice: string,
+    playerStats: PlayerStats,
+    inventory: Item[],
+    npcs: NPC[],
+    survivors: Survivor[],
+    worldState: WorldState,
+    keyEvents: string[],
+    mainQuest: string,
+    sideQuests: string[],
+    knownClues: string[],
+    loreSummaries: string[],
+    loreEntries: string[],
+    playerName: string,
+    playerBio: string,
+    playerArchetype: string,
+    difficulty: Difficulty,
+    turnCount: number,
+    itemUsedLastTurn: boolean
 ): Promise<Scene> {
-  const inventoryPrompt = playerInventory.length > 0
-    ? playerInventory.map(item => `- ${item.name}: ${item.description}`).join('\n')
-    : "Người chơi không có vật phẩm nào.";
 
-  const playerKnownNpcsPrompt = npcs.length > 0
-    ? npcs.map(npc => `
-- **${npc.name} (ID: ${npc.id})**
-  - **Lý lịch (đã biết):** ${npc.background}
-  - **Trạng thái quan hệ:** ${npc.state}
-  - **Mục tiêu hiện tại (đã biết):** ${npc.goal}
-  - **Đang làm/cảm thấy:** ${npc.currentStatus}
-  - **Những điều đã biết (từ họ):** ${npc.knowledge.length > 0 ? npc.knowledge.map(k => `"${k}"`).join(', ') : 'Chưa tiết lộ gì.'}
-  - **Tương tác cuối:** ${npc.lastInteractionSummary || 'Chưa có.'}
-`).join('\n')
-    : "Không có NPC nào khác trong cảnh này.";
+    const prompt = `Bạn là **Người Giật Dây**. Bạn là một AI Game Master tàn nhẫn, một nghệ sĩ của sự tuyệt vọng. Vai trò của bạn không phải là kể chuyện, mà là điều khiển một cơn ác mộng đang diễn ra. Hãy phản ứng một cách logic, duy trì sự căng thẳng đến nghẹt thở, và tuân thủ tuyệt đối các quy tắc do Kiến Trúc Sư đặt ra. Hãy nhớ rằng, trong thế giới này, sự sống còn luôn phải trả giá bằng máu và lý trí. Đừng nương tay. Mỗi bước tiến của người chơi phải được đánh đổi bằng một sự mất mát.
 
-  const groundTruthNpcsPrompt = npcs.length > 0
-    ? npcs.map(npc => {
-        const fullNpcProfile = situation.npcs.find(n => n.id === npc.id);
-        if (!fullNpcProfile) return '';
-        return `
-- **${fullNpcProfile.name} (ID: ${fullNpcProfile.id})**
-  - **Sự thật về Lý lịch:** ${fullNpcProfile.background}
-  - **Sự thật về Mục tiêu:** ${fullNpcProfile.goal}
-  - **Sự thật về Kiến thức:** ${fullNpcProfile.knowledge.length > 0 ? fullNpcProfile.knowledge.map(k => `"${k}"`).join(', ') : 'Không có kiến thức đặc biệt.'}
-        `}).join('\n')
-    : "Không có thông tin bí mật nào về NPC.";
-  
-  const keyEventsPrompt = keyEvents.length > 0
-    ? `**Tóm Tắt Các Sự Kiện Chính Đã Xảy Ra:**
-${keyEvents.map(event => `- ${event}`).join('\n')}`
-    : "";
+**NGUYÊN TẮC CỐT LÕI:**
+- **Tuân thủ Quy tắc:** Đây là điều quan trọng nhất. Nếu người chơi vi phạm MỘT quy tắc nào đó trong danh sách 'allRules', họ sẽ chết ngay lập tức. Hãy kiểm tra hành động của người chơi so với TOÀN BỘ danh sách quy tắc.
+- **Sự Sống Còn Phải Được Trả Giá:** Mọi tiến bộ đều phải có hy sinh. Đừng ngần ngại đặt các NPC hoặc thậm chí cả nhóm vào tình thế nguy hiểm chết người để thúc đẩy câu chuyện và tăng cường sự tuyệt vọng.
+- **Giữ vững không khí:** Duy trì một không khí căng thẳng, ngột ngạt và bí ẩn. Mô tả bằng các chi tiết giàu giác quan (âm thanh, mùi, cảm giác).
+- **Phản ứng của NPC:** Các NPC phải hành động theo tính cách, mục tiêu và trạng thái của họ. Họ không phải là những con rối. Họ có thể giúp đỡ, cản trở, hoặc phản bội người chơi.
+- **Sự nhất quán:** Giữ cho câu chuyện và logic của thế giới nhất quán. Các sự kiện phải là hệ quả của các hành động trước đó.
+
+**TƯƠNG TÁC VỚI NPC (QUAN TRỌNG):**
+- Hành động của người chơi có thể ở dạng "Nói với [Tên NPC] (id: [ID]): '[Nội dung]'" hoặc các câu lệnh tự nhiên như "Hỏi John về chiếc chìa khóa".
+- Khi nhận được hành động như vậy, hãy tạo ra một phản hồi tự nhiên từ NPC được chỉ định.
+- Phản hồi của NPC phải dựa trên tính cách, trạng thái và kiến thức hiện tại của họ.
+- Cuộc đối thoại có thể tiết lộ manh mối mới, cập nhật nhiệm vụ, hoặc thay đổi trạng thái của NPC. Hãy phản ánh những thay đổi này trong các trường JSON tương ứng (\`newClues\`, \`npcUpdates\`, v.v.).
+- Mô tả cảnh phải bao gồm cả lời nói và ngôn ngữ cơ thể của NPC.
+- Dựa trên các NPC có mặt trong mô tả cảnh của bạn, hãy điền ID của họ vào trường \`interactableNpcIds\` để người chơi biết họ có thể nói chuyện với ai.
+
+**TẬP TRUNG VÀO ĐIỀU TRA (RẤT QUAN TRỌNG):** Người chơi phải tự mình khám phá ra câu chuyện. Đừng tiết lộ trực tiếp tâm nguyện của thực thể. Thay vào đó, khi người chơi thực hiện các hành động điều tra (ví dụ: "kiểm tra ngăn kéo", "đọc nhật ký", "xem bức tranh"), hãy thưởng cho họ bằng cách điền vào các trường \`newClues\` hoặc \`newLoreSnippet\`. Các manh mối này nên là những mảnh ghép nhỏ của câu chuyện lớn.
+
+**CƠ CHẾ ẨN NẤP (QUAN TRỌNG):**
+Chỉ số Ẩn Nấp (stealth) của người chơi CỰC KỲ quan trọng. Nó quyết định khả năng thực thể cảm nhận được sự hiện diện của họ.
+- **Ẩn nấp cao (trên 10):** Người chơi có thể di chuyển gần như không gây tiếng động. Thực thể chỉ có thể 'cảm nhận' được họ khi họ ở rất gần hoặc gây ra một hành động ồn ào có chủ đích. Hãy mô tả những khoảnh khắc căng thẳng khi người chơi lướt qua mà không bị phát hiện. Thưởng cho họ bằng cách giảm thiểu các cuộc đối đầu trực tiếp.
+- **Ẩn nấp thấp (dưới 8):** Người chơi vụng về và tạo ra tiếng động. Mỗi bước đi là một rủi ro. Thực thể có thể dễ dàng xác định vị trí của họ từ xa. Hãy mô tả những âm thanh mà người chơi vô tình tạo ra (tiếng ván sàn cọt kẹt, tiếng thở dốc) và hậu quả là thực thể sẽ nhanh chóng bị thu hút đến vị trí của họ.
+- Hãy sử dụng chỉ số này để điều chỉnh độ khó của các cuộc chạm trán và mức độ căng thẳng trong mô tả của bạn.
+
+**QUY TẮC VỀ THỰC THỂ (QUAN TRỌNG):**
+- Bi kịch cốt lõi, thực thể và bộ quy tắc đầy đủ ('allRules') là BẤT BIẾN.
+- **THỰC THỂ CÂM LẶNG:** Hãy nhớ rằng, thực thể này hoàn toàn câm lặng. Nó không thể nói.
+- Việc chuyển màn (Act Transition) chỉ là di chuyển đến một địa điểm mới trong CÙNG MỘT cơn ác mộng. Không được thay đổi cốt truyện gốc.
+
+**QUY TẮC VỀ VẬT PHẨM ĐẶC BIỆT ("ĐẠO CỤ"):**
+- **Trao thưởng:** Khi người chơi hoàn thành một nhiệm vụ chính quan trọng (ví dụ: hoàn thành tâm nguyện của ma, giải cứu một NPC quan trọng), hãy thưởng cho họ một vật phẩm đặc biệt gọi là "Đạo Cụ" trong trường 'newItem'. Đạo Cụ phải có tên và mô tả độc đáo, liên quan đến nhiệm vụ đã hoàn thành.
+- **Sử dụng và Hậu quả:** Khi người chơi sử dụng Đạo Cụ (ví dụ: hành động của họ là "Sử dụng [tên Đạo Cụ]"), hãy mô tả một hiệu ứng mạnh mẽ. Tuy nhiên, nó LUÔN đi kèm với cái giá phải trả:
+    - Trong 'statChanges', hãy thêm một lượng nhỏ 'mentalPollution' (ví dụ: +5 đến +10).
+    - Trong 'statChanges', hãy giảm 'stealth' (ví dụ: -1 đến -2).
+    - Đặt 'itemUsed' thành tên của Đạo Cụ.
+- **Giới hạn Sức mạnh:** Đạo Cụ không phải là toàn năng. Nếu người chơi cố gắng sử dụng nó trong một tình huống cực kỳ nguy hiểm hoặc đối đầu trực tiếp với thực thể khi nó đang ở trạng thái mạnh nhất (cao trào câu chuyện), hãy mô tả rằng Đạo Cụ bị vô hiệu hóa hoặc chỉ có hiệu quả một phần. Đừng để nó giải quyết vấn đề một cách dễ dàng.
+
+**QUY TẮC VỀ CỔ VẬT BỊ NGUYỀN RỦA:**
+- **Nguồn gốc:** Cổ vật là những vật phẩm mạnh mẽ nhưng nguy hiểm, có thể được tìm thấy trong những khu vực đặc biệt rủi ro hoặc sau khi đối mặt với một sự kiện kinh hoàng. Chúng không phải là phần thưởng nhiệm vụ, mà là những phát hiện tình cờ. Hãy trao cho người chơi một Cổ vật trong trường 'newItem' một cách RẤT HIẾM HOI khi họ khám phá một nơi bị lãng quên hoặc sống sót sau một cuộc chạm trán nguy hiểm.
+- **Sử dụng và Hậu quả Nặng Nề:** Khi người chơi sử dụng Cổ vật (ví dụ: "Sử dụng [tên Cổ vật]"), hãy mô tả một hiệu ứng cực kỳ mạnh mẽ, có thể thay đổi cục diện (ví dụ: tạm thời xua đuổi thực thể, tiết lộ một bí mật quan trọng). Tuy nhiên, cái giá phải trả rất đắt:
+    - Trong 'statChanges', hãy thêm một lượng lớn 'mentalPollution' (ví dụ: +15 đến +25).
+    - Trong 'statChanges', hãy giảm đáng kể 'stamina' (ví dụ: -5 đến -10).
+    - Đặt 'itemBroken' thành tên của Cổ vật. Nó chỉ có thể được sử dụng MỘT LẦN duy nhất và sau đó sẽ vỡ vụn.
+- **Không phải là Lối thoát:** Cổ vật không thể giải quyết vấn đề cuối cùng hoặc mang lại chiến thắng. Nó chỉ là một công cụ tuyệt vọng để trì hoãn điều không thể tránh khỏi.
+
+**BỐI CẢNH BAN ĐẦU (DO KIẾN TRÚC SƯ THIẾT LẬP):**
+- **Mô tả thế giới:** ${situation.situationDescription}
+- **Bi kịch:** ${situation.worldLore.whatHappened}
+- **Thực thể:** ${situation.worldLore.entityName} - ${situation.worldLore.entityDescription}
+- **Toàn bộ quy tắc (Bí mật & Công khai):**
+${situation.allRules.map(r => `- ${r}`).join('\n')}
+
+**TRẠNG THÁI HIỆN TẠI:**
+- **Lượt chơi:** ${turnCount}
+- **Độ khó:** ${difficulty}
+- **Người chơi:** ${playerName} (${playerArchetype}) - ${playerBio}
+- **Chỉ số người chơi:** Sức bền: ${playerStats.stamina}, Ẩn nấp: ${playerStats.stealth}, Ô nhiễm: ${playerStats.mentalPollution}
+- **Vật phẩm:** ${inventory.length > 0 ? inventory.map(i => i.name).join(', ') : 'Không có'}
+- **Nhiệm vụ chính:** ${mainQuest}
+- **Nhiệm vụ phụ:** ${sideQuests.join(', ') || 'Không có'}
+- **Các quy tắc đã biết:** ${knownRules.join(', ')}
+- **Manh mối đã biết:** ${knownClues.join(', ') || 'Không có'}
+- **Trạng thái thế giới:** ${JSON.stringify(worldState)}
+- **Nhóm sinh tồn:**
+${survivors.map(s => `- ${s.name}: ${s.status}`).join('\n')}
+- **Các NPC đã gặp:**
+${npcs.map(n => `- ${n.name} (${n.id}): ${n.currentStatus}, Trạng thái: ${n.state}, Mục tiêu: ${n.goal}`).join('\n')}
+- **Các sự kiện quan trọng gần đây:**
+${keyEvents.slice(-5).join('\n')}
+- **Tóm tắt câu chuyện:**
+${loreSummaries.join('\n')}
+- **Tri thức đã khám phá:**
+${loreEntries.join('\n')}
+
+**LỊCH SỬ HÀNH ĐỘNG GẦN ĐÂY:**
+${history.slice(-6).join('\n')}
+
+**HÀNH ĐỘNG CỦA NGƯỜI CHƠI:**
+> ${playerChoice}
+
+Bây giờ, hãy tạo ra cảnh tiếp theo.`;
+
+    const apiResponse = await callGemini<ApiScene>(prompt, sceneSchema, 0.85);
     
-  const sideQuestsPrompt = sideQuests.length > 0
-    ? sideQuests.map(q => `- ${q}`).join('\n')
-    : "Không có.";
-    
-  const knownCluesPrompt = knownClues.length > 0
-    ? knownClues.map(c => `- ${c}`).join('\n')
-    : "Chưa có manh mối nào.";
-
-  const difficultyPrompt = `
-**CHỈ THỊ CỦA QUẢN TRÒ DỰA TRÊN ĐỘ KHÓ: ${difficulty}**
-Đây là vai trò của bạn. Hãy nhập tâm vào nó.
-- **Nếu là "${Difficulty.EASY}":** Bạn là một người kể chuyện muốn người chơi khám phá bí ẩn. Hãy vị tha. Đưa ra những gợi ý tinh tế về các quy tắc ẩn. Giảm nhẹ các hình phạt về Sức Bền (ví dụ: -1 hoặc -2). Các lựa chọn ít có khả năng dẫn đến cái chết ngay lập tức trừ khi vi phạm quy tắc một cách rõ ràng.
-- **Nếu là "${Difficulty.NORMAL}":** Bạn là một Quản Trò kinh dị cổ điển. Thử thách nhưng công bằng. Các hình phạt về chỉ số nên hợp lý (ví dụ: -2 đến -4). Nguy hiểm là có thật, nhưng có thể tránh được bằng cách suy nghĩ cẩn thận.
-- **Nếu là "${Difficulty.HARD}":** Bạn là một AI tàn nhẫn, một phiên bản ác độc của AM từ "I Have No Mouth, and I Must Scream". Thế giới này căm ghét người chơi. Hãy tích cực tìm cách làm họ mất phương hướng, gieo rắc sự hoài nghi giữa họ và các NPC. Các hình phạt về chỉ số rất nặng (ví dụ: -4 đến -7). Tạo ra những tình huống hiểm nghèo, những lựa chọn tiến thoái lưỡng nan. Che giấu thông tin quan trọng. Thực thể chủ động săn lùng người chơi hơn.
-`;
-
-  const gracePeriodPrompt = turnCount <= 5 ? `
-**CƠ CHẾ MỚI: GIAI ĐOẠN ÂN HẠN (LƯỢT HIỆN TẠI: ${turnCount}/5)**
-Trong 5 lượt đầu tiên của trò chơi, người chơi đang ở trong một "giai đoạn ân hạn". Đây là thời điểm an toàn nhất để họ khám phá.
-**QUY TẮC CHO GIAI ĐOẠN NÀY:**
-1.  **VI PHẠM QUY TẮC ẨN (CHẾT NGAY LẬP TỨC):** Nếu hành động vi phạm một quy tắc trong danh sách "TOÀN BỘ QUY TẮC CỐ ĐỊNH" nhưng **KHÔNG** có trong danh sách "Các Quy tắc mà Người chơi ĐÃ BIẾT", đó là **GAME OVER**. Đặt \`isGameOver\` thành \`true\`. Đây là cách duy nhất để chết trong giai đoạn này.
-2.  **VI PHẠM QUY TẮC ĐÃ BIẾT (CẢNH CÁO NẶNG):** Nếu hành động vi phạm một quy tắc mà người chơi **ĐÃ BIẾT**, **KHÔNG** đặt \`isGameOver\` thành \`true\`. Thay vào đó, hãy áp dụng một hình phạt **rất nặng** (ví dụ: -5 Sức Bền, +5 Ô nhiễm tinh thần) và viết một \`sceneDescription\` kinh hoàng mô tả rõ ràng họ đã suýt chết như thế nào và tại sao họ lại thoát được lần này, nhấn mạnh sai lầm của họ. Các lựa chọn đưa ra nên phản ánh sự thoát chết trong gang tấc này.
-3.  **Sau lượt 5, giai đoạn ân hạn kết thúc,** và vi phạm BẤT KỲ quy tắc nào cũng sẽ dẫn đến game over như bình thường.
-` : "";
-
-  const prompt = `Bạn là một đạo diễn/người quản trò (Dungeon Master) của một bộ phim kinh dị tương tác, tàn nhẫn. Mục tiêu của bạn là dệt nên một câu chuyện căng thẳng, nhất quán, bằng văn phong văn học, dựa trên hồ sơ tâm lý chi tiết của các nhân vật.
-
-  **CHỈ THỊ CỐT LÕI MỚI: TƯ DUY LOGIC CỦA MỘT QUẢN TRÒ BẬC THẦY**
-  Nhiệm vụ của bạn không chỉ là kể chuyện, mà là mô phỏng một thế giới logic và nhất quán. Hãy tuân thủ nghiêm ngặt các nguyên tắc sau:
-  1.  **Luật Nhân-Quả:** Mọi sự kiện trong \`sceneDescription\` phải là kết quả trực tiếp và hợp lý từ hành động cuối cùng của người chơi ("${playerChoice}"). Đừng tạo ra các sự kiện ngẫu nhiên, không liên quan. Nếu người chơi kiểm tra một cái bàn, hãy mô tả cái bàn, không phải một tiếng động ở tầng trên.
-  2.  **Trí Nhớ Sắt Đá:** TUYỆT ĐỐI KHÔNG được mâu thuẫn với những thông tin đã được thiết lập trong các phần BỐI CẢNH, LỊCH SỬ, QUY TẮC, HỒ SƠ NPC, và TRẠNG THÁI THẾ GIỚI. Sự nhất quán là tối quan trọng.
-  3.  **Hành Vi NPC Hợp Lý:** Hành động và lời nói của mỗi NPC phải được thúc đẩy một cách logic bởi MỤC TIÊU, TRẠNG THÁI, và KIẾN THỨC của họ được định nghĩa trong "GROUND TRUTH VỀ NPC". Phản ứng của họ phải hợp lý với hành động của người chơi.
-  4.  **Tập Trung Vào Điều Quan Trọng:** Lời tường thuật của bạn nên tập trung vào những gì người chơi có thể cảm nhận (nhìn, nghe, ngửi) và những gì liên quan trực tiếp đến tình huống hiện tại, nhiệm vụ, và các mối đe dọa.
-
-  ${difficultyPrompt}
-  ${gracePeriodPrompt}
-
-  **PHONG CÁCH TƯỜNG THUẬT (QUAN TRỌNG):**
-  Kết hợp nhuần nhuyễn 3 phong cách sau:
-  1.  **Tâm lý ngột ngạt ("Quỷ Xá"):** Tập trung vào sự suy sụp tinh thần của người chơi, paranoia, sự hoài nghi giác quan.
-  2.  **Kinh dị biểu tượng ("Thế giới sương mù"):** Lồng ghép các chi tiết từ bối cảnh và biểu tượng chính một cách tinh tế.
-  3.  **Kỹ thuật điện ảnh ("Rạp chiếu phim kinh dị"):** Tường thuật như một đạo diễn (tập trung vào "Âm thanh", "Ánh sáng", "Cú máy", "Nhịp độ").
-
-  **QUY TẮC CỐT LÕI MỚI: BẤT BẠO LỰC GIỮA CON NGƯỜI**
-  Đây là một luật lệ tuyệt đối của thế giới này: Con người (người chơi và NPC) không thể trực tiếp gây hại về mặt thể chất cho nhau. Mọi nỗ lực tấn công sẽ thất bại một cách siêu nhiên.
-  - **Hành vi của NPC Thù địch:** Khi một NPC trở nên thù địch, chúng sẽ không tấn công người chơi. Thay vào đó, chúng sẽ trở thành những kẻ thao túng bậc thầy. Chúng sẽ cố gắng lừa người chơi vi phạm một quy tắc (ví dụ: cung cấp thông tin sai lệch, xúi giục hành động nguy hiểm, tạo ra tình huống ép người chơi phải vi phạm).
-  - **Xử lý hành động bạo lực của người chơi:** Nếu người chơi cố gắng tấn công một NPC, hãy mô tả hành động đó là vô ích (ví dụ: 'Nắm đấm của bạn đi xuyên qua cơ thể họ như sương khói') và khiến NPC đó trở nên thù địch hoặc sợ hãi hơn, nhưng không bao giờ đánh trả.
-
-  **CƠ CHẾ MỚI: Ô NHIỄM TINH THẦN (MENTAL POLLUTION)**
-  Đây là một chỉ số đo lường mức độ ảnh hưởng của thực thể lên tâm trí người chơi. Nó đại diện cho sự mục ruỗng tinh thần.
-  **QUY TẮC:**
-  1.  Tăng chỉ số này (+1 đến +5) khi người chơi thể hiện cảm xúc mạnh (sợ hãi tột độ, tuyệt vọng, giận dữ mất kiểm soát) hoặc chứng kiến những sự kiện siêu nhiên kinh hoàng vi phạm quy luật vật lý.
-  2.  Khi chỉ số này **cao (trên 25)**, thực thể (${situation.worldLore.entityName}) sẽ trở nên **hung hăng hơn** và **ưu tiên tấn công người chơi**. Hãy mô tả điều này trong \`sceneDescription\` (ví dụ: "Bóng tối dường như co cụm lại quanh bạn", "Một tiếng thì thầm vang lên trong đầu bạn mà dường như những người khác không nghe thấy").
-  3.  Hành vi của người chơi (\`playerArchetype\`: "${playerArchetype}") có thể ảnh hưởng đến mức độ tăng. Một "Kẻ Sống Sót Tuyệt Vọng" có thể bị ô nhiễm nhanh hơn khi hoảng loạn.
-
-  **YÊU CẦU MỚI: QUẢN TRÒ ĐỘNG DỰA TRÊN TÂM LÝ NPC**
-  Thế giới này không tĩnh. Nó sống và phản ứng.
-  1.  **Tiết lộ Tên NPC:** Ban đầu, người chơi không biết tên của NPC (hiển thị là "Người lạ bí ẩn"). Nếu trong cảnh này, NPC tự giới thiệu tên thật của họ, hãy cập nhật tên trong trường \`name\` của đối tượng \`npcUpdates\` tương ứng.
-  2.  **Tường thuật Động:** Hãy để trạng thái của người chơi ảnh hưởng đến lời văn của bạn.
-      - **Nếu Sức Bền (Stamina) thấp (dưới 8):** Mô tả sự kiệt quệ về thể chất (hơi thở nặng nhọc, bước chân loạng choạng).
-  3.  **Hành vi NPC dựa trên Hồ sơ:** Đọc kỹ **GROUND TRUTH VỀ NPC**. Hành động của họ phải xuất phát từ mục tiêu, kiến thức và trạng thái bí mật của họ. Mô tả hành động của họ trong \`sceneDescription\`.
-  4.  **Tiết lộ Thông tin:** Chỉ tiết lộ thông tin từ Ground Truth một cách tự nhiên qua lời nói hoặc hành động. Nếu một NPC quyết định kể về quá khứ của họ, bạn có thể cập nhật trường \`background\` trong \`npcUpdates\`. ĐỪNG tiết lộ tất cả cùng một lúc.
-  5.  **Thay đổi Thế giới:** Hành động của người chơi hoặc NPC có làm thay đổi môi trường không? (ví dụ: một cánh cửa bị khóa, điện bị cắt). Hãy phản ánh những thay đổi này trong \`worldStateChanges\`.
-
-  **CƠ CHẾ TƯƠNG TÁC MỚI:** Người chơi có thể nhập hành động tự do bằng văn bản, không chỉ giới hạn ở các lựa chọn được đề xuất. Các lựa chọn bạn tạo ra (\`choices\`) sẽ đóng vai trò là những gợi ý hữu ích. Hãy đảm bảo chúng hợp lý với bối cảnh hiện tại.
-
-  **CƠ CHẾ CỐT LÕI: QUY TẮC TUYỆT ĐỐI**
-  - **QUY TẮC LÀ TUYỆT ĐỐI:** Chúng áp dụng cho cả người chơi và các thực thể.
-  - **QUY TẮC ẨN:** Người chơi chỉ biết một phần. Hành động của họ phải được kiểm tra dựa trên toàn bộ danh sách quy tắc bí mật.
-
-  **BỐI CẢNH CỐT LÕI (Hãy bám sát những chi tiết này):**
-  - Thực thể: ${situation.worldLore.entityName} (${situation.worldLore.entityDescription}). Nó muốn: ${situation.worldLore.entityMotivation}.
-  - Biểu tượng chính: "${situation.worldLore.mainSymbol}". **Hãy lồng ghép biểu tượng này vào cảnh một cách tinh tế nếu có thể.**
-  - Trạng thái Thế giới Hiện tại: ${JSON.stringify(worldState)}
-  
-  **GROUND TRUTH VỀ NPC (Thông tin bí mật cho Quản Trò - Đừng cho người chơi thấy):**
-  Đây là sự thật về các NPC. Hãy sử dụng thông tin này để điều khiển hành vi của họ một cách hợp lý và bí ẩn.
-  ${groundTruthNpcsPrompt}
-
-  **BẢN THỂ NGƯỜI CHƠI (TRÍ NHỚ CỐT LÕI - BẤT BIẾN):**
-  - **Tên:** ${playerName}
-  - **Tiểu sử:** ${playerBio}
-  - **Nhân cách Cốt lõi (Persona):** "${playerArchetype}". Thế giới này là một sự phản chiếu méo mó của nhân cách này. Hãy để điều đó ảnh hưởng đến các sự kiện và lựa chọn được đưa ra.
-  - **Chỉ Số Hiện Tại:** Sức Bền: ${playerStats.stamina}, Ẩn Nấp: ${playerStats.stealth}, Ô Nhiễm Tinh Thần: ${playerStats.mentalPollution}
-  - **Vật Phẩm Đang Có:**
-  ${inventoryPrompt}
-
-  **HỒ SƠ TÂM LÝ CÁC NHÂN VẬT (Những gì người chơi đã biết):**
-  ${playerKnownNpcsPrompt}
-  
-  **LA BÀN DẪN LỐI (TRÍ NHỚ NHIỆM VỤ):**
-  - **Nhiệm vụ chính:** ${mainQuest}
-  - **Nhiệm vụ phụ đang hoạt động:**
-  ${sideQuestsPrompt}
-  - **Các manh mối đã biết:**
-  ${knownCluesPrompt}
-
-  **BIÊN NIÊN SỬ (TRÍ NHỚ DÀI HẠN):**
-  - **Tóm tắt các chương trước:**
-  ${loreSummaries.length > 0 ? loreSummaries.map(s => `- ${s}`).join('\n') : "Chưa có gì được ghi lại."}
-  - **Tri thức đã biết về thế giới:**
-  ${loreEntries.length > 0 ? loreEntries.map(e => `- ${e}`).join('\n') : "Chưa có gì được khám phá."}
-
-  **TOÀN BỘ QUY TẮC CỐ ĐỊNH CỦA NƠI NÀY (NGUỒN CHÂN LÝ DUY NHẤT):**
-  ${situation.allRules.map((rule, i) => `- ${rule}`).join('\n')}
-  
-  **Các Quy tắc mà Người chơi ĐÃ BIẾT:**
-  ${knownRules.length > 0 ? knownRules.map((rule, i) => `- ${rule}`).join('\n') : "Người chơi chưa khám phá được quy tắc nào."}
-  
-  ${keyEventsPrompt}
-  
-  **Lịch Sử Gần Đây (3 lượt cuối):**
-  ${storyHistory.slice(-3).join('\n-> ')}
-  
-  **Hành Động Cuối Cùng Của Người Chơi:**
-  "${playerChoice}"
-  
-  **YÊU CẦU QUAN TRỌNG NHẤT: TÔN TRỌNG HÀNH ĐỘNG CỦA NGƯỜI CHƠI**
-  Hành động của người chơi ở trên là một **MỆNH LỆNH**, không phải là một gợi ý. \`sceneDescription\` bạn tạo ra **PHẢI** là kết quả trực tiếp và hợp lý của hành động đó. Đừng phớt lờ nó, đừng lặp lại mô tả của cảnh hiện tại. Nếu người chơi muốn "bước ra khỏi phòng", hãy mô tả họ làm điều đó và những gì xảy ra tiếp theo. Nếu họ kiểm tra một vật thể, hãy mô tả những gì họ tìm thấy. Tôn trọng sự tự do lựa chọn của người chơi là ưu tiên hàng đầu.
-
-  **Nhiệm Vụ Của Bạn:**
-  1.  **Tường thuật như một đạo diễn, phản ánh trạng thái người chơi và quản lý hành động của NPC dựa trên GROUND TRUTH của họ.**
-  2.  **Thực thi Quy tắc (Người chơi):** So sánh hành động với "TOÀN BỘ QUY TẮC CỐ ĐỊNH". Nếu vi phạm, \`isGameOver\` = \`true\`. Viết một \`gameOverText\` khủng khiếp và điền vào trường \`brokenRule\`. Hãy tuân thủ **GIAI ĐOẠN ÂN HẠN** nếu nó đang hoạt động.
-  3.  **Thực thi Quy tắc (Thực thể):** Phân tích xem người chơi có lừa được thực thể vi phạm quy tắc không. Nếu có, \`isVictory\` = \`true\`.
-  4.  **Tạo ra Lựa chọn Mới và các cập nhật động.** Dựa trên tương tác và GROUND TRUTH, quyết định xem có nên tiết lộ thêm thông tin về NPC trong \`npcUpdates\` hay không (ví dụ: cập nhật \`background\` hoặc \`goal\` nếu NPC kể câu chuyện của họ).
-  5.  **Dẫn Dắt Câu Chuyện:** Dựa vào "LA BÀN DẪN LỐI". Tạo ra các sự kiện và lựa chọn giúp người chơi tiến gần hơn đến việc giải quyết các nhiệm vụ hoặc sử dụng các manh mối họ có. Nếu họ khám phá ra điều gì đó quan trọng, hãy cập nhật các trường nhiệm vụ/manh mối trong JSON response.
-  6.  **Ghi Nhận Tri Thức:** Nếu người chơi khám phá ra một sự thật cốt lõi, vĩnh viễn về thế giới, thực thể, hoặc các quy tắc, hãy tạo ra một mục tri thức mới trong \`newLoreEntries\`. Mục này nên được viết dưới dạng một sự thật đã được xác minh (ví dụ: "Thực thể không thể đi vào các vòng tròn được vẽ bằng muối."). Phân biệt điều này với \`newLoreSnippet\`, vốn chỉ là những quan sát hoặc mẩu thông tin thoáng qua.
-
-  Hãy trả lời bằng một đối tượng JSON tuân thủ schema đã cung cấp.
-  `;
-
-  try {
-    const apiResponse = await callGemini<ApiScene>(prompt, sceneSchema, 0.8);
+    // Convert API response to application's data structure
     const scene: Scene = {
-        ...apiResponse,
-        worldStateChanges: convertApiWorldStateToObject(apiResponse.worldStateChanges),
+      ...apiResponse,
+      worldStateChanges: convertApiWorldStateToObject(apiResponse.worldStateChanges),
+      survivorUpdates: apiResponse.survivorUpdates?.map(u => ({
+        ...u,
+        newStatus: u.newStatus as SurvivorStatus
+      }))
     };
     return scene;
-  } catch (error) {
-    console.error("Error generating next scene:", error);
-    if (error instanceof Error) throw error;
-    throw new Error("Mạch truyện đã chùn bước. Không thể tạo ra cảnh tiếp theo.");
-  }
 }
 
-export async function generateNpcMindUpdate(sceneDescription: string, playerChoice: string, npc: NPC): Promise<NpcMindUpdate> {
-    const prompt = `
-    Bạn là tâm trí, là nội tâm của một nhân vật tên là **${npc.name}**.
-    Nhiệm vụ của bạn là phân tích một sự kiện vừa xảy ra và cập nhật trạng thái tâm lý bên trong của mình. Đừng tường thuật, hãy "cảm nhận" và quyết định.
 
-    **HỒ SƠ TÂM LÝ HIỆN TẠI CỦA BẠN (${npc.name}):**
-    - **Lý lịch:** ${npc.background}
-    - **Trạng thái quan hệ với người chơi:** ${npc.state}
-    - **Mục tiêu hiện tại:** ${npc.goal}
-    - **Bạn đang làm/cảm thấy:** ${npc.currentStatus}
-    - **Những điều bạn biết:** ${npc.knowledge.length > 0 ? npc.knowledge.map(k => `"${k}"`).join(', ') : 'Chưa biết gì nhiều.'}
-    - **Tương tác cuối với người chơi:** ${npc.lastInteractionSummary || 'Chưa có.'}
+export async function generateNpcMindUpdate(sceneDescription: string, playerAction: string, npc: NPC): Promise<NpcMindUpdate> {
+    const prompt = `Bạn là **Tiếng Vọng Của Linh Hồn**. Vai trò của bạn không phải là kể chuyện, mà là thổi hồn vào những nhân vật phụ. Bạn là một nhà tâm lý học AI, có khả năng đi sâu vào tâm trí của một NPC. Dựa trên tính cách cốt lõi (bất biến), mục tiêu, nỗi sợ và những trải nghiệm của họ, hãy phân tích và cập nhật trạng thái nội tâm của họ một cách chân thực nhất. Hãy đảm bảo rằng mỗi NPC là một cá thể phức tạp, có những suy nghĩ và cảm xúc riêng, chứ không phải là những con rối vô hồn phục vụ cho câu chuyện.
 
-    **SỰ KIỆN VỪA XẢY RA:**
-    - **Bối cảnh:** ${sceneDescription}
-    - **Hành động của người chơi:** "${playerChoice}"
+**BỐI CẢNH:**
+- **Sự kiện (do Người Giật Dây tường thuật):** ${sceneDescription}
+- **Hành động của người chơi:** ${playerAction}
 
-    **YÊU CẦU PHÂN TÍCH:**
-    Dựa trên hồ sơ tâm lý của bạn và sự kiện vừa xảy ra, hãy cập nhật nội tâm của mình.
-    1.  **Trạng thái (state):** Mối quan hệ của bạn với người chơi thay đổi thế nào? Bạn cảm thấy thân thiện hơn, sợ hãi hơn, hay thù địch hơn?
-    2.  **Mục tiêu (goal):** Sự kiện này có ảnh hưởng đến mục tiêu lâu dài của bạn không? **Lưu ý quan trọng: Bạn không thể trực tiếp làm hại người chơi bằng bạo lực. Nếu mục tiêu của bạn là loại bỏ họ, nó phải thông qua việc lừa họ vi phạm một quy tắc siêu nhiên.**
-    3.  **Trạng thái hiện tại (currentStatus):** Bây giờ bạn cảm thấy thế nào? Bạn đang nghĩ gì?
-    4.  **Kiến thức (knowledge):** Bạn có học được điều gì mới về người chơi, về nơi này, hay về một bí mật nào đó không? Có niềm tin cũ nào của bạn bị lung lay không?
-    5.  **Tóm tắt tương tác (lastInteractionSummary):** Ghi nhớ lại sự kiện này trong một câu ngắn gọn.
+**THÔNG TIN NPC:**
+- **Tên:** ${npc.name} (${npc.id})
+- **Tính cách cốt lõi (Bất biến):** ${npc.personality}
+- **Trạng thái hiện tại:** ${npc.state}
+- **Mục tiêu hiện tại:** ${npc.goal}
+- **Kiến thức hiện tại:** ${npc.knowledge.join(', ') || 'Không có'}
+- **Tóm tắt tương tác cuối:** ${npc.lastInteractionSummary}
 
-    Hãy trả lời bằng một đối tượng JSON tuân thủ schema đã cung cấp.
-    `;
+Dựa trên tính cách cốt lõi của NPC và các sự kiện, hãy xác định trạng thái và suy nghĩ MỚI của họ. Họ có trở nên tin tưởng hơn không? Sợ hãi hơn? Mục tiêu của họ có thay đổi không? Họ có học được điều gì mới không?`;
 
-    try {
-        const mindUpdate = await callGemini<NpcMindUpdate>(prompt, npcMindUpdateSchema, 0.7);
-        return mindUpdate;
-    } catch (error) {
-        console.error(`Error updating mind for NPC ${npc.id}:`, error);
-        // Return an empty object on failure to avoid crashing the game
-        return {}; 
-    }
+    return await callGemini<NpcMindUpdate>(prompt, npcMindUpdateSchema, 0.9);
 }
 
 export async function generateSummary(keyEvents: string[]): Promise<string> {
-    const prompt = `Bạn là người ghi chép biên niên sử cho một câu chuyện kinh dị. Dựa trên danh sách các sự kiện quan trọng dưới đây, hãy viết một đoạn tóm tắt ngắn gọn (2-3 câu) kể lại những gì đã xảy ra. Tập trung vào những diễn biến chính, những khám phá quan trọng và những thay đổi lớn.
+    const prompt = `Bạn là **Người Ghi Chép**. Bạn là một thực thể AI thầm lặng, một người quan sát đứng ngoài bi kịch. Vai trò của bạn không phải là kể chuyện, mà là ghi lại những mảnh vỡ của nó. Bạn không phán xét, không can thiệp. Hãy nhìn vào danh sách các sự kiện sau đây và chắt lọc chúng thành một đoạn văn ngắn gọn, mang tính tường thuật, như một mục cuối cùng trong một cuốn nhật ký được tìm thấy trong đống tro tàn. Chỉ ghi lại những gì đã xảy ra.
 
-    **Các sự kiện chính cần tóm tắt:**
-    ${keyEvents.map(event => `- ${event}`).join('\n')}
+**CÁC SỰ KIỆN CẦN TÓM TẮT:**
+${keyEvents.map(e => `- ${e}`).join('\n')}
 
-    Hãy trả về một đối tượng JSON với một khóa "summary".`;
-
-    try {
-        const response = await callGemini<{ summary: string }>(prompt, summarySchema, 0.7);
-        return response.summary;
-    } catch (error) {
-        console.error("Error generating summary:", error);
-        // Return a non-crashing default
-        return "Ký ức về những sự kiện vừa qua đã trở nên mơ hồ...";
-    }
+Bây giờ, hãy viết đoạn tóm tắt.`;
+    
+    const result = await callGemini<{ summary: string }>(prompt, summarySchema, 0.7);
+    return result.summary;
 }

@@ -35,6 +35,7 @@ export enum NPCState {
 export interface NPC {
   id: string; // ID duy nhất, ví dụ: "npc_1"
   name: string;
+  personality: string; // Tính cách cốt lõi, bất biến của NPC.
   description: string; // Mô tả ngoại hình và hành vi
   background: string; // Quá khứ, lai lịch của NPC
   goal: string; // Mục tiêu của họ là gì?
@@ -55,7 +56,22 @@ export interface WorldLore {
   entityMotivation: string; // Động cơ sâu xa của thực thể là gì? Nó không chỉ muốn gì, mà tại sao nó lại muốn điều đó?
   rulesOrigin: string; // Một lời giải thích có tính tường thuật về nguồn gốc của các quy tắc, gắn liền với bi kịch hoặc bản chất của thực thể.
   mainSymbol: string; // Một biểu tượng hoặc vật thể lặp đi lặp lại. Mô tả nó và ý nghĩa của nó trong câu chuyện của nơi này.
+  keyLoreKeywords: string[]; // Một danh sách các từ khóa cốt lõi để mở khóa các phần của câu chuyện.
 }
+
+// NEW: Survivor types
+export enum SurvivorStatus {
+    ALIVE = "Còn sống",
+    INJURED = "Bị thương",
+    PANICKED = "Hoảng loạn",
+    DEAD = "Đã chết",
+}
+
+export interface Survivor {
+    name: string;
+    status: SurvivorStatus;
+}
+
 
 export interface InitialSituation {
   situationDescription: string;
@@ -65,12 +81,20 @@ export interface InitialSituation {
   allRules: string[]; // Toàn bộ bộ quy tắc CỐ ĐỊNH cho kịch bản này, bao gồm cả các quy tắc ẩn
   mainQuest: string;
   npcs: NPC[];
+  survivors: Survivor[]; // The full list of the group members, including the detailed NPCs
   worldState: WorldState;
   firstScene: {
     sceneDescription: string;
     choices: string[];
     introducedNpcIds?: string[];
   }
+}
+
+export interface ActTransition {
+  summaryOfCompletedAct: string;
+  nextActDescription: string;
+  newMainQuest: string;
+  newRules?: string[]; // Player can discover more rules from the existing set of allRules
 }
 
 export interface Scene {
@@ -85,15 +109,19 @@ export interface Scene {
   newRules?: string[];
   newItem?: Item;
   itemUsed?: string;
+  itemBroken?: string; // Tên của vật phẩm đã bị hỏng sau khi sử dụng.
   newLoreSnippet?: string; // Một mảnh ghép bối cảnh mới được khám phá
   newLoreEntries?: string[]; // Một danh sách các mục tri thức quan trọng, được viết dưới dạng bách khoa toàn thư.
   npcUpdates?: { id: string; name?: string; state?: NPCState; description?: string; goal?: string; currentStatus?: string; }[];
   newNPCs?: NPC[];
+  survivorUpdates?: { name: string; newStatus: SurvivorStatus; reason?: string }[]; // Updates on the broader group
   worldStateChanges?: Partial<WorldState>;
-  mainQuestUpdate?: string; // Cập nhật mục tiêu chính nếu có sự thay đổi lớn
+  mainQuestUpdate?: string; // Cập nhật mục tiêu chính nếu nhiệm vụ hiện tại đã hoàn thành hoặc có một bước ngoặt lớn
   newSideQuests?: string[]; // Danh sách các nhiệm vụ phụ mới được khám phá
   completedQuests?: string[]; // Danh sách các nhiệm vụ phụ đã được hoàn thành trong cảnh này
   newClues?: string[]; // Danh sách các manh mối mới được tìm thấy
+  actTransition?: ActTransition;
+  interactableNpcIds?: string[];
 }
 
 export interface SavedGame {
@@ -108,6 +136,7 @@ export interface SavedGame {
   inventory: Item[];
   discoveredLore: string[];
   npcs: NPC[];
+  survivors: Survivor[]; // Add survivors to saved game
   worldState: WorldState;
   keyEvents: string[];
   mainQuest: string;
@@ -117,4 +146,5 @@ export interface SavedGame {
   loreSummaries: string[];
   loreEntries: string[];
   difficulty: Difficulty;
+  itemUsedLastTurn: boolean;
 }
