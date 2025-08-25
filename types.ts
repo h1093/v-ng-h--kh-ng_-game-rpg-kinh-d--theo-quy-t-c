@@ -14,9 +14,9 @@ export enum Difficulty {
 }
 
 export interface PlayerStats {
-  sanity: number;
   stamina: number;
   stealth: number;
+  mentalPollution: number;
 }
 
 export interface Item {

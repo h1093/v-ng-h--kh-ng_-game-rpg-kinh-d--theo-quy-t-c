@@ -181,16 +181,16 @@ const ProfileContent: React.FC<{ name: string; bio: string; archetype: string; s
           <h4 className="font-semibold text-gray-500 text-sm mb-2">Trạng thái</h4>
           <div className="grid grid-cols-3 gap-4 text-center">
               <div>
-                  <p className="text-xs text-gray-500 tracking-widest">LÝ TRÍ</p>
-                  <p className={`text-xl text-red-500 ${stats.sanity < 8 ? 'flicker' : ''}`}>{stats.sanity}</p>
-              </div>
-              <div>
                   <p className="text-xs text-gray-500 tracking-widest">SỨC BỀN</p>
                   <p className="text-xl text-gray-300">{stats.stamina}</p>
               </div>
               <div>
                   <p className="text-xs text-gray-500 tracking-widest">ẨN NẤP</p>
                   <p className="text-xl text-gray-300">{stats.stealth}</p>
+              </div>
+               <div>
+                  <p className="text-xs text-gray-500 tracking-widest">Ô NHIỄM</p>
+                  <p className={`text-xl text-purple-400 ${stats.mentalPollution > 25 ? 'flicker' : ''}`}>{stats.mentalPollution}</p>
               </div>
           </div>
       </div>
@@ -234,6 +234,7 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
   const [loreEntries, setLoreEntries] = React.useState<string[]>(() => initialState?.loreEntries || []);
   const [modalContent, setModalContent] = React.useState<{ title: string; content: React.ReactNode } | null>(null);
   const storyEndRef = React.useRef<HTMLDivElement>(null);
+  const [playerInput, setPlayerInput] = React.useState('');
   
   React.useEffect(() => {
     // This effect now only runs for a NEW game. Loading a game bypasses this.
@@ -306,7 +307,7 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
 
     try {
       // Step 1: Generate the next scene based on current state
-      const nextScene = await generateNextScene(currentSituation, fullHistory, knownRules, choice, playerStats, inventory, npcs, worldState, keyEvents, mainQuest, sideQuests, knownClues, loreSummaries, loreEntries, playerName, playerBio, playerArchetype, currentDifficulty);
+      const nextScene = await generateNextScene(currentSituation, fullHistory, knownRules, choice, playerStats, inventory, npcs, worldState, keyEvents, mainQuest, sideQuests, knownClues, loreSummaries, loreEntries, playerName, playerBio, playerArchetype, currentDifficulty, turnCount);
       
       const newKeyEvents: string[] = [];
       let updatedNpcs = [...npcs]; // Create a working copy of NPCs
@@ -315,9 +316,9 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
       // --- Stats ---
       if (nextScene.statChanges) {
         setPlayerStats(prevStats => ({
-          sanity: Math.max(0, prevStats.sanity + (nextScene.statChanges?.sanity || 0)),
           stamina: Math.max(0, prevStats.stamina + (nextScene.statChanges?.stamina || 0)),
           stealth: Math.max(0, prevStats.stealth + (nextScene.statChanges?.stealth || 0)),
+          mentalPollution: Math.max(0, Math.min(100, prevStats.mentalPollution + (nextScene.statChanges?.mentalPollution || 0))),
         }));
       }
 
@@ -494,6 +495,17 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
       setIsLoading(false);
     }
   };
+  
+  const handlePlayerAction = (action: string) => {
+    if (!action.trim() || isLoading) return;
+    handleChoice(action);
+    setPlayerInput('');
+  };
+
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    handlePlayerAction(playerInput);
+  };
 
   if (!scene) {
     return <div className="min-h-screen flex items-center justify-center"><LoadingIndicator /></div>;
@@ -506,8 +518,8 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
         {/* Status Bar */}
         <div className="w-full bg-black/50 p-2 px-4 rounded-lg border border-gray-900 mb-4 flex justify-around text-center sticky top-4 z-10 backdrop-blur-sm">
           <div>
-              <p className="text-xs text-gray-500 tracking-widest">LÝ TRÍ</p>
-              <p className={`text-xl text-red-500 ${playerStats.sanity < 8 ? 'flicker' : ''}`}>{playerStats.sanity}</p>
+              <p className="text-xs text-gray-500 tracking-widest">Ô NHIỄM</p>
+              <p className={`text-xl text-purple-400 ${playerStats.mentalPollution > 25 ? 'flicker' : ''}`}>{playerStats.mentalPollution}</p>
           </div>
           <div>
               <p className="text-xs text-gray-500 tracking-widest">SỨC BỀN</p>
@@ -531,17 +543,41 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
             <div ref={storyEndRef} />
           </div>
           
-          {!isLoading && scene.choices && scene.choices.length > 0 && (
-            <div className="mt-6 grid grid-cols-1 gap-4 fade-in">
-              {scene.choices.map((choice, index) => (
+          {!isLoading && scene.choices && (
+            <div className="mt-6 fade-in">
+              <form onSubmit={handleFormSubmit} className="flex gap-2">
+                <input
+                  type="text"
+                  value={playerInput}
+                  onChange={(e) => setPlayerInput(e.target.value)}
+                  className="flex-grow bg-gray-900/50 border border-gray-700 text-gray-300 p-3 focus:outline-none focus:border-red-500 transition-colors rounded-l-md"
+                  placeholder="Bạn làm gì tiếp theo?"
+                  disabled={isLoading}
+                  aria-label="Nhập hành động của bạn"
+                />
                 <button
-                  key={index}
-                  onClick={() => handleChoice(choice)}
-                  className="p-4 text-left border border-gray-700 hover:bg-gray-900 hover:border-red-500 transition-all duration-200"
+                  type="submit"
+                  className="px-6 py-3 bg-transparent border border-gray-700 text-gray-400 hover:bg-red-600 hover:text-black hover:border-red-600 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed rounded-r-md"
+                  disabled={isLoading || !playerInput.trim()}
                 >
-                  {choice}
+                  Gửi
                 </button>
-              ))}
+              </form>
+              {scene.choices.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className="text-sm text-gray-500 self-center mr-2">Gợi ý:</span>
+                  {scene.choices.map((choice, index) => (
+                    <button
+                      key={index}
+                      onClick={() => handlePlayerAction(choice)}
+                      disabled={isLoading}
+                      className="px-3 py-1 text-sm border border-gray-800 bg-gray-900 text-gray-500 hover:bg-gray-800 hover:border-gray-600 hover:text-gray-300 transition-all duration-200 disabled:opacity-50 rounded-md"
+                    >
+                      {choice}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

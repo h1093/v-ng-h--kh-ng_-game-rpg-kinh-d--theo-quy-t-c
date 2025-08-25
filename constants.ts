@@ -5,17 +5,17 @@ export const CHARACTER_CREATION_QUESTION = "Khi bóng tối thì thầm tên b�
 export const CHARACTER_CHOICES: { text: string; stats: PlayerStats; archetype: string }[] = [
     {
         text: "Thận trọng điều tra âm thanh.",
-        stats: { sanity: 12, stamina: 8, stealth: 10 },
+        stats: { stamina: 8, stealth: 10, mentalPollution: 0 },
         archetype: "Người Điều Tra Thận Trọng"
     },
     {
         text: "Bỏ chạy. Tìm nơi ẩn nấp gần nhất và cầu nguyện nó không tìm thấy bạn.",
-        stats: { sanity: 8, stamina: 10, stealth: 12 },
+        stats: { stamina: 10, stealth: 12, mentalPollution: 0 },
         archetype: "Kẻ Sống Sót Tuyệt Vọng"
     },
     {
         text: "Chuẩn bị chiến đấu, vớ lấy một vũ khí tạm bợ.",
-        stats: { sanity: 10, stamina: 12, stealth: 8 },
+        stats: { stamina: 12, stealth: 8, mentalPollution: 0 },
         archetype: "Chiến Binh Bất Đắc Dĩ"
     }
 ];

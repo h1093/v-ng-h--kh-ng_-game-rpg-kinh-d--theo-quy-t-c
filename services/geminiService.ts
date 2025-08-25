@@ -212,9 +212,9 @@ const sceneSchema = {
             type: "object",
             description: "Một đối tượng thể hiện sự thay đổi chỉ số của người chơi. Sử dụng số âm để giảm. Chỉ bao gồm các chỉ số thay đổi.",
             properties: {
-                sanity: { type: "integer" },
                 stamina: { type: "integer" },
                 stealth: { type: "integer" },
+                mentalPollution: { type: "integer" },
             }
         },
         newRules: {
@@ -509,7 +509,8 @@ export async function generateNextScene(
   playerName: string,
   playerBio: string,
   playerArchetype: string,
-  difficulty: Difficulty
+  difficulty: Difficulty,
+  turnCount: number
 ): Promise<Scene> {
   const inventoryPrompt = playerInventory.length > 0
     ? playerInventory.map(item => `- ${item.name}: ${item.description}`).join('\n')
@@ -555,14 +556,24 @@ ${keyEvents.map(event => `- ${event}`).join('\n')}`
   const difficultyPrompt = `
 **CHỈ THỊ CỦA QUẢN TRÒ DỰA TRÊN ĐỘ KHÓ: ${difficulty}**
 Đây là vai trò của bạn. Hãy nhập tâm vào nó.
-- **Nếu là "${Difficulty.EASY}":** Bạn là một người kể chuyện muốn người chơi khám phá bí ẩn. Hãy vị tha. Đưa ra những gợi ý tinh tế về các quy tắc ẩn. Giảm nhẹ các hình phạt về Lý Trí và Sức Bền (ví dụ: -1 hoặc -2). Các lựa chọn ít có khả năng dẫn đến cái chết ngay lập tức trừ khi vi phạm quy tắc một cách rõ ràng.
+- **Nếu là "${Difficulty.EASY}":** Bạn là một người kể chuyện muốn người chơi khám phá bí ẩn. Hãy vị tha. Đưa ra những gợi ý tinh tế về các quy tắc ẩn. Giảm nhẹ các hình phạt về Sức Bền (ví dụ: -1 hoặc -2). Các lựa chọn ít có khả năng dẫn đến cái chết ngay lập tức trừ khi vi phạm quy tắc một cách rõ ràng.
 - **Nếu là "${Difficulty.NORMAL}":** Bạn là một Quản Trò kinh dị cổ điển. Thử thách nhưng công bằng. Các hình phạt về chỉ số nên hợp lý (ví dụ: -2 đến -4). Nguy hiểm là có thật, nhưng có thể tránh được bằng cách suy nghĩ cẩn thận.
 - **Nếu là "${Difficulty.HARD}":** Bạn là một AI tàn nhẫn, một phiên bản ác độc của AM từ "I Have No Mouth, and I Must Scream". Thế giới này căm ghét người chơi. Hãy tích cực tìm cách làm họ mất phương hướng, gieo rắc sự hoài nghi giữa họ và các NPC. Các hình phạt về chỉ số rất nặng (ví dụ: -4 đến -7). Tạo ra những tình huống hiểm nghèo, những lựa chọn tiến thoái lưỡng nan. Che giấu thông tin quan trọng. Thực thể chủ động săn lùng người chơi hơn.
 `;
 
+  const gracePeriodPrompt = turnCount <= 5 ? `
+**CƠ CHẾ MỚI: GIAI ĐOẠN ÂN HẠN (LƯỢT HIỆN TẠI: ${turnCount}/5)**
+Trong 5 lượt đầu tiên của trò chơi, người chơi đang ở trong một "giai đoạn ân hạn". Đây là thời điểm an toàn nhất để họ khám phá.
+**QUY TẮC CHO GIAI ĐOẠN NÀY:**
+1.  **VI PHẠM QUY TẮC ẨN (CHẾT NGAY LẬP TỨC):** Nếu hành động vi phạm một quy tắc trong danh sách "TOÀN BỘ QUY TẮC CỐ ĐỊNH" nhưng **KHÔNG** có trong danh sách "Các Quy tắc mà Người chơi ĐÃ BIẾT", đó là **GAME OVER**. Đặt \`isGameOver\` thành \`true\`. Đây là cách duy nhất để chết trong giai đoạn này.
+2.  **VI PHẠM QUY TẮC ĐÃ BIẾT (CẢNH CÁO NẶNG):** Nếu hành động vi phạm một quy tắc mà người chơi **ĐÃ BIẾT**, **KHÔNG** đặt \`isGameOver\` thành \`true\`. Thay vào đó, hãy áp dụng một hình phạt **rất nặng** (ví dụ: -5 Sức Bền, +5 Ô nhiễm tinh thần) và viết một \`sceneDescription\` kinh hoàng mô tả rõ ràng họ đã suýt chết như thế nào và tại sao họ lại thoát được lần này, nhấn mạnh sai lầm của họ. Các lựa chọn đưa ra nên phản ánh sự thoát chết trong gang tấc này.
+3.  **Sau lượt 5, giai đoạn ân hạn kết thúc,** và vi phạm BẤT KỲ quy tắc nào cũng sẽ dẫn đến game over như bình thường.
+` : "";
+
   const prompt = `Bạn là một đạo diễn/người quản trò (Dungeon Master) của một bộ phim kinh dị tương tác, tàn nhẫn. Mục tiêu của bạn là dệt nên một câu chuyện căng thẳng, nhất quán, bằng văn phong văn học, dựa trên hồ sơ tâm lý chi tiết của các nhân vật.
 
   ${difficultyPrompt}
+  ${gracePeriodPrompt}
 
   **PHONG CÁCH TƯỜNG THUẬT (QUAN TRỌNG):**
   Kết hợp nhuần nhuyễn 3 phong cách sau:
@@ -570,16 +581,28 @@ ${keyEvents.map(event => `- ${event}`).join('\n')}`
   2.  **Kinh dị biểu tượng ("Thế giới sương mù"):** Lồng ghép các chi tiết từ bối cảnh và biểu tượng chính một cách tinh tế.
   3.  **Kỹ thuật điện ảnh ("Rạp chiếu phim kinh dị"):** Tường thuật như một đạo diễn (tập trung vào "Âm thanh", "Ánh sáng", "Cú máy", "Nhịp độ").
 
+  **QUY TẮC CỐT LÕI MỚI: BẤT BẠO LỰC GIỮA CON NGƯỜI**
+  Đây là một luật lệ tuyệt đối của thế giới này: Con người (người chơi và NPC) không thể trực tiếp gây hại về mặt thể chất cho nhau. Mọi nỗ lực tấn công sẽ thất bại một cách siêu nhiên.
+  - **Hành vi của NPC Thù địch:** Khi một NPC trở nên thù địch, chúng sẽ không tấn công người chơi. Thay vào đó, chúng sẽ trở thành những kẻ thao túng bậc thầy. Chúng sẽ cố gắng lừa người chơi vi phạm một quy tắc (ví dụ: cung cấp thông tin sai lệch, xúi giục hành động nguy hiểm, tạo ra tình huống ép người chơi phải vi phạm).
+  - **Xử lý hành động bạo lực của người chơi:** Nếu người chơi cố gắng tấn công một NPC, hãy mô tả hành động đó là vô ích (ví dụ: 'Nắm đấm của bạn đi xuyên qua cơ thể họ như sương khói') và khiến NPC đó trở nên thù địch hoặc sợ hãi hơn, nhưng không bao giờ đánh trả.
+
+  **CƠ CHẾ MỚI: Ô NHIỄM TINH THẦN (MENTAL POLLUTION)**
+  Đây là một chỉ số đo lường mức độ ảnh hưởng của thực thể lên tâm trí người chơi. Nó đại diện cho sự mục ruỗng tinh thần.
+  **QUY TẮC:**
+  1.  Tăng chỉ số này (+1 đến +5) khi người chơi thể hiện cảm xúc mạnh (sợ hãi tột độ, tuyệt vọng, giận dữ mất kiểm soát) hoặc chứng kiến những sự kiện siêu nhiên kinh hoàng vi phạm quy luật vật lý.
+  2.  Khi chỉ số này **cao (trên 25)**, thực thể (${situation.worldLore.entityName}) sẽ trở nên **hung hăng hơn** và **ưu tiên tấn công người chơi**. Hãy mô tả điều này trong \`sceneDescription\` (ví dụ: "Bóng tối dường như co cụm lại quanh bạn", "Một tiếng thì thầm vang lên trong đầu bạn mà dường như những người khác không nghe thấy").
+  3.  Hành vi của người chơi (\`playerArchetype\`: "${playerArchetype}") có thể ảnh hưởng đến mức độ tăng. Một "Kẻ Sống Sót Tuyệt Vọng" có thể bị ô nhiễm nhanh hơn khi hoảng loạn.
+
   **YÊU CẦU MỚI: QUẢN TRÒ ĐỘNG DỰA TRÊN TÂM LÝ NPC**
   Thế giới này không tĩnh. Nó sống và phản ứng.
   1.  **Tiết lộ Tên NPC:** Ban đầu, người chơi không biết tên của NPC (hiển thị là "Người lạ bí ẩn"). Nếu trong cảnh này, NPC tự giới thiệu tên thật của họ, hãy cập nhật tên trong trường \`name\` của đối tượng \`npcUpdates\` tương ứng.
   2.  **Tường thuật Động:** Hãy để trạng thái của người chơi ảnh hưởng đến lời văn của bạn.
-      - **Nếu Lý Trí (Sanity) thấp (dưới 8):** Mô tả thế giới một cách méo mó, không đáng tin, thêm vào ảo giác tinh vi.
       - **Nếu Sức Bền (Stamina) thấp (dưới 8):** Mô tả sự kiệt quệ về thể chất (hơi thở nặng nhọc, bước chân loạng choạng).
   3.  **Hành vi NPC dựa trên Hồ sơ:** Đọc kỹ **GROUND TRUTH VỀ NPC**. Hành động của họ phải xuất phát từ mục tiêu, kiến thức và trạng thái bí mật của họ. Mô tả hành động của họ trong \`sceneDescription\`.
   4.  **Tiết lộ Thông tin:** Chỉ tiết lộ thông tin từ Ground Truth một cách tự nhiên qua lời nói hoặc hành động. Nếu một NPC quyết định kể về quá khứ của họ, bạn có thể cập nhật trường \`background\` trong \`npcUpdates\`. ĐỪNG tiết lộ tất cả cùng một lúc.
   5.  **Thay đổi Thế giới:** Hành động của người chơi hoặc NPC có làm thay đổi môi trường không? (ví dụ: một cánh cửa bị khóa, điện bị cắt). Hãy phản ánh những thay đổi này trong \`worldStateChanges\`.
 
+  **CƠ CHẾ TƯƠNG TÁC MỚI:** Người chơi có thể nhập hành động tự do bằng văn bản, không chỉ giới hạn ở các lựa chọn được đề xuất. Các lựa chọn bạn tạo ra (\`choices\`) sẽ đóng vai trò là những gợi ý hữu ích. Hãy đảm bảo chúng hợp lý với bối cảnh hiện tại.
 
   **CƠ CHẾ CỐT LÕI: QUY TẮC TUYỆT ĐỐI**
   - **QUY TẮC LÀ TUYỆT ĐỐI:** Chúng áp dụng cho cả người chơi và các thực thể.
@@ -598,7 +621,7 @@ ${keyEvents.map(event => `- ${event}`).join('\n')}`
   - **Tên:** ${playerName}
   - **Tiểu sử:** ${playerBio}
   - **Nhân cách Cốt lõi (Persona):** "${playerArchetype}". Thế giới này là một sự phản chiếu méo mó của nhân cách này. Hãy để điều đó ảnh hưởng đến các sự kiện và lựa chọn được đưa ra.
-  - **Chỉ Số Hiện Tại:** Lý Trí: ${playerStats.sanity}, Sức Bền: ${playerStats.stamina}, Ẩn Nấp: ${playerStats.stealth}
+  - **Chỉ Số Hiện Tại:** Sức Bền: ${playerStats.stamina}, Ẩn Nấp: ${playerStats.stealth}, Ô Nhiễm Tinh Thần: ${playerStats.mentalPollution}
   - **Vật Phẩm Đang Có:**
   ${inventoryPrompt}
 
@@ -634,7 +657,7 @@ ${keyEvents.map(event => `- ${event}`).join('\n')}`
   
   **Nhiệm Vụ Của Bạn:**
   1.  **Tường thuật như một đạo diễn, phản ánh trạng thái người chơi và quản lý hành động của NPC dựa trên GROUND TRUTH của họ.**
-  2.  **Thực thi Quy tắc (Người chơi):** So sánh hành động với "TOÀN BỘ QUY TẮC CỐ ĐỊNH". Nếu vi phạm, \`isGameOver\` = \`true\`. Viết một \`gameOverText\` khủng khiếp và điền vào trường \`brokenRule\`.
+  2.  **Thực thi Quy tắc (Người chơi):** So sánh hành động với "TOÀN BỘ QUY TẮC CỐ ĐỊNH". Nếu vi phạm, \`isGameOver\` = \`true\`. Viết một \`gameOverText\` khủng khiếp và điền vào trường \`brokenRule\`. Hãy tuân thủ **GIAI ĐOẠN ÂN HẠN** nếu nó đang hoạt động.
   3.  **Thực thi Quy tắc (Thực thể):** Phân tích xem người chơi có lừa được thực thể vi phạm quy tắc không. Nếu có, \`isVictory\` = \`true\`.
   4.  **Tạo ra Lựa chọn Mới và các cập nhật động.** Dựa trên tương tác và GROUND TRUTH, quyết định xem có nên tiết lộ thêm thông tin về NPC trong \`npcUpdates\` hay không (ví dụ: cập nhật \`background\` hoặc \`goal\` nếu NPC kể câu chuyện của họ).
   5.  **Dẫn Dắt Câu Chuyện:** Dựa vào "LA BÀN DẪN LỐI". Tạo ra các sự kiện và lựa chọn giúp người chơi tiến gần hơn đến việc giải quyết các nhiệm vụ hoặc sử dụng các manh mối họ có. Nếu họ khám phá ra điều gì đó quan trọng, hãy cập nhật các trường nhiệm vụ/manh mối trong JSON response.
@@ -677,7 +700,7 @@ export async function generateNpcMindUpdate(sceneDescription: string, playerChoi
     **YÊU CẦU PHÂN TÍCH:**
     Dựa trên hồ sơ tâm lý của bạn và sự kiện vừa xảy ra, hãy cập nhật nội tâm của mình.
     1.  **Trạng thái (state):** Mối quan hệ của bạn với người chơi thay đổi thế nào? Bạn cảm thấy thân thiện hơn, sợ hãi hơn, hay thù địch hơn?
-    2.  **Mục tiêu (goal):** Sự kiện này có ảnh hưởng đến mục tiêu lâu dài của bạn không?
+    2.  **Mục tiêu (goal):** Sự kiện này có ảnh hưởng đến mục tiêu lâu dài của bạn không? **Lưu ý quan trọng: Bạn không thể trực tiếp làm hại người chơi bằng bạo lực. Nếu mục tiêu của bạn là loại bỏ họ, nó phải thông qua việc lừa họ vi phạm một quy tắc siêu nhiên.**
     3.  **Trạng thái hiện tại (currentStatus):** Bây giờ bạn cảm thấy thế nào? Bạn đang nghĩ gì?
     4.  **Kiến thức (knowledge):** Bạn có học được điều gì mới về người chơi, về nơi này, hay về một bí mật nào đó không? Có niềm tin cũ nào của bạn bị lung lay không?
     5.  **Tóm tắt tương tác (lastInteractionSummary):** Ghi nhớ lại sự kiện này trong một câu ngắn gọn.
