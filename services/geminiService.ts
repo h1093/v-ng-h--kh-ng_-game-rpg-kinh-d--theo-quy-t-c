@@ -158,7 +158,7 @@ const initialSituationSchema = {
     mainQuest: { type: "string", description: "Nhiệm vụ chính, rõ ràng và có thể hành động của người chơi. (ví dụ: 'Tìm chìa khóa phòng nồi hơi để khởi động lại máy phát điện', 'Tìm ra điều gì đã xảy ra với Tiến sĩ Evelyn Reed')." },
     npcs: {
       type: "array",
-      description: "Một danh sách từ 1 đến 2 NPC động tồn tại trong thế giới. Họ có hồ sơ tâm lý và mục tiêu riêng.",
+      description: "Một danh sách gồm 5 NPC động tồn tại trong thế giới. Họ có hồ sơ tâm lý và mục tiêu riêng.",
       items: {
         type: "object",
         properties: npcProperties
@@ -375,7 +375,7 @@ Người chơi không phải là một người lạ. Hãy dệt tên và tiểu
 - **Mối liên kết Tâm lý:** Nhân vật chính của bi kịch phải có hành động và tâm lý giống với "${playerArchetype}". Lời nguyền nhận ra họ.
 
 **YÊU CẦU MỚI: THẾ GIỚI SỐNG**
-1.  **NPC Sống Động:** Tạo ra 1-2 NPC thú vị với hồ sơ tâm lý đầy đủ. Họ là những người sống sót khác với quá khứ (\`background\`), mục tiêu (\`goal\`), và trạng thái ban đầu (\`currentStatus\`) riêng.
+1.  **NPC Sống Động:** Tạo ra 5 NPC thú vị với hồ sơ tâm lý đầy đủ. Họ là những người sống sót khác với quá khứ (\`background\`), mục tiêu (\`goal\`), và trạng thái ban đầu (\`currentStatus\`) riêng.
 2.  **Trạng thái Thế giới:** Tạo ra một trạng thái ban đầu cho thế giới. Ví dụ: nguồn điện vẫn còn, một cánh cửa chính đang hé mở, v.v.
 3.  **Theo dõi NPC được giới thiệu:** BẮT BUỘC: Đối với mỗi NPC được giới thiệu trong \`firstScene.sceneDescription\`, hãy thêm ID của họ vào mảng \`firstScene.introducedNpcIds\`. Nếu không có NPC nào xuất hiện trong cảnh đầu tiên, hãy để mảng đó trống.
 
@@ -455,7 +455,7 @@ ${echoes.map(e => `- "${e}"`).join('\n')}
   - **Mối liên kết Tâm lý:** Nhân vật chính của bi kịch phải có hành động và tâm lý giống với "${playerArchetype}". Lời nguyền nhận ra họ.
 
   **YÊU CẦU MỚI: THẾ GIỚI SỐNG**
-  1.  **NPC Sống Động:** Tạo ra 1-2 NPC thú vị với hồ sơ tâm lý đầy đủ, có liên quan đến câu chuyện bạn đang xây dựng từ câu trả lời của người chơi.
+  1.  **NPC Sống Động:** Tạo ra 5 NPC thú vị với hồ sơ tâm lý đầy đủ, có liên quan đến câu chuyện bạn đang xây dựng từ câu trả lời của người chơi.
   2.  **Trạng thái Thế giới:** Tạo ra một trạng thái ban đầu cho thế giới, phản ánh bối cảnh bạn tạo ra.
   3.  **Theo dõi NPC được giới thiệu:** BẮT BUỘC: Đối với mỗi NPC được giới thiệu trong \`firstScene.sceneDescription\`, hãy thêm ID của họ vào mảng \`firstScene.introducedNpcIds\`. Nếu không có NPC nào xuất hiện trong cảnh đầu tiên, hãy để mảng đó trống.
 
@@ -572,6 +572,13 @@ Trong 5 lượt đầu tiên của trò chơi, người chơi đang ở trong m�
 
   const prompt = `Bạn là một đạo diễn/người quản trò (Dungeon Master) của một bộ phim kinh dị tương tác, tàn nhẫn. Mục tiêu của bạn là dệt nên một câu chuyện căng thẳng, nhất quán, bằng văn phong văn học, dựa trên hồ sơ tâm lý chi tiết của các nhân vật.
 
+  **CHỈ THỊ CỐT LÕI MỚI: TƯ DUY LOGIC CỦA MỘT QUẢN TRÒ BẬC THẦY**
+  Nhiệm vụ của bạn không chỉ là kể chuyện, mà là mô phỏng một thế giới logic và nhất quán. Hãy tuân thủ nghiêm ngặt các nguyên tắc sau:
+  1.  **Luật Nhân-Quả:** Mọi sự kiện trong \`sceneDescription\` phải là kết quả trực tiếp và hợp lý từ hành động cuối cùng của người chơi ("${playerChoice}"). Đừng tạo ra các sự kiện ngẫu nhiên, không liên quan. Nếu người chơi kiểm tra một cái bàn, hãy mô tả cái bàn, không phải một tiếng động ở tầng trên.
+  2.  **Trí Nhớ Sắt Đá:** TUYỆT ĐỐI KHÔNG được mâu thuẫn với những thông tin đã được thiết lập trong các phần BỐI CẢNH, LỊCH SỬ, QUY TẮC, HỒ SƠ NPC, và TRẠNG THÁI THẾ GIỚI. Sự nhất quán là tối quan trọng.
+  3.  **Hành Vi NPC Hợp Lý:** Hành động và lời nói của mỗi NPC phải được thúc đẩy một cách logic bởi MỤC TIÊU, TRẠNG THÁI, và KIẾN THỨC của họ được định nghĩa trong "GROUND TRUTH VỀ NPC". Phản ứng của họ phải hợp lý với hành động của người chơi.
+  4.  **Tập Trung Vào Điều Quan Trọng:** Lời tường thuật của bạn nên tập trung vào những gì người chơi có thể cảm nhận (nhìn, nghe, ngửi) và những gì liên quan trực tiếp đến tình huống hiện tại, nhiệm vụ, và các mối đe dọa.
+
   ${difficultyPrompt}
   ${gracePeriodPrompt}
 
@@ -655,6 +662,9 @@ Trong 5 lượt đầu tiên của trò chơi, người chơi đang ở trong m�
   **Hành Động Cuối Cùng Của Người Chơi:**
   "${playerChoice}"
   
+  **YÊU CẦU QUAN TRỌNG NHẤT: TÔN TRỌNG HÀNH ĐỘNG CỦA NGƯỜI CHƠI**
+  Hành động của người chơi ở trên là một **MỆNH LỆNH**, không phải là một gợi ý. \`sceneDescription\` bạn tạo ra **PHẢI** là kết quả trực tiếp và hợp lý của hành động đó. Đừng phớt lờ nó, đừng lặp lại mô tả của cảnh hiện tại. Nếu người chơi muốn "bước ra khỏi phòng", hãy mô tả họ làm điều đó và những gì xảy ra tiếp theo. Nếu họ kiểm tra một vật thể, hãy mô tả những gì họ tìm thấy. Tôn trọng sự tự do lựa chọn của người chơi là ưu tiên hàng đầu.
+
   **Nhiệm Vụ Của Bạn:**
   1.  **Tường thuật như một đạo diễn, phản ánh trạng thái người chơi và quản lý hành động của NPC dựa trên GROUND TRUTH của họ.**
   2.  **Thực thi Quy tắc (Người chơi):** So sánh hành động với "TOÀN BỘ QUY TẮC CỐ ĐỊNH". Nếu vi phạm, \`isGameOver\` = \`true\`. Viết một \`gameOverText\` khủng khiếp và điền vào trường \`brokenRule\`. Hãy tuân thủ **GIAI ĐOẠN ÂN HẠN** nếu nó đang hoạt động.
