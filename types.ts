@@ -43,6 +43,8 @@ export interface NPC {
   state: NPCState; // Trạng thái mối quan hệ với người chơi
   knowledge: string[]; // Những điều NPC biết hoặc tin là thật
   lastInteractionSummary: string; // Tóm tắt ngắn gọn về lần tương tác cuối với người chơi
+  trust: number; // Một chỉ số ẩn từ 0-100 đại diện cho lòng tin vào người chơi.
+  skill?: { name: string; description: string; }; // Một kỹ năng độc nhất dựa trên lai lịch của NPC.
 }
 
 export type WorldState = { [key: string]: string | number | boolean };
@@ -108,11 +110,11 @@ export interface Scene {
   statChanges?: Partial<PlayerStats>;
   newRules?: string[];
   newItem?: Item;
-  itemUsed?: string;
+  itemsUsed?: string[]; // Tên của các vật phẩm đã được sử dụng/tiêu thụ.
   itemBroken?: string; // Tên của vật phẩm đã bị hỏng sau khi sử dụng.
   newLoreSnippet?: string; // Một mảnh ghép bối cảnh mới được khám phá
   newLoreEntries?: string[]; // Một danh sách các mục tri thức quan trọng, được viết dưới dạng bách khoa toàn thư.
-  npcUpdates?: { id: string; name?: string; state?: NPCState; description?: string; goal?: string; currentStatus?: string; }[];
+  npcUpdates?: { id: string; name?: string; state?: NPCState; description?: string; goal?: string; currentStatus?: string; trust?: number; }[];
   newNPCs?: NPC[];
   survivorUpdates?: { name: string; newStatus: SurvivorStatus; reason?: string }[]; // Updates on the broader group
   worldStateChanges?: Partial<WorldState>;
@@ -122,6 +124,7 @@ export interface Scene {
   newClues?: string[]; // Danh sách các manh mối mới được tìm thấy
   actTransition?: ActTransition;
   interactableNpcIds?: string[];
+  hallucinationText?: string; // Mô tả một ảo giác hình ảnh hoặc âm thanh.
 }
 
 export interface SavedGame {
@@ -129,6 +132,7 @@ export interface SavedGame {
   playerName: string;
   playerBio: string;
   playerArchetype: string;
+  playerVow: string; // NEW: The player's core motivation
   playerStats: PlayerStats;
   scene: Scene | null;
   storyHistory: string[];

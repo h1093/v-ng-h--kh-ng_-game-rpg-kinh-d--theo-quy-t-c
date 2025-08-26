@@ -238,6 +238,12 @@ const NPCContent: React.FC<{ npcs: NPC[] }> = ({ npcs }) => {
               <h4 className="font-semibold text-gray-500 text-sm">Lý lịch</h4>
               <p className="text-gray-400 whitespace-pre-wrap">{npc.background}</p>
             </div>
+            {npc.skill && (
+              <div>
+                <h4 className="font-semibold text-gray-500 text-sm">Kỹ năng</h4>
+                <p className="text-gray-400"><span className="font-bold text-gray-300">{npc.skill.name}:</span> {npc.skill.description}</p>
+              </div>
+            )}
              {npc.knowledge.length > 0 && (
               <div>
                 <h4 className="font-semibold text-gray-500 text-sm">Những điều đã biết</h4>
@@ -283,7 +289,7 @@ const QuestContent: React.FC<{ mainQuest: string; sideQuests: string[]; knownClu
   </div>
 );
 
-const ProfileContent: React.FC<{ name: string; bio: string; archetype: string; stats: PlayerStats }> = ({ name, bio, archetype, stats }) => (
+const ProfileContent: React.FC<{ name: string; bio: string; archetype: string; vow: string; stats: PlayerStats }> = ({ name, bio, archetype, vow, stats }) => (
     <div className="space-y-6">
       <div>
         <h3 className="font-bold text-lg text-gray-200 mb-2">{name}</h3>
@@ -292,6 +298,10 @@ const ProfileContent: React.FC<{ name: string; bio: string; archetype: string; s
        <div>
         <h4 className="font-semibold text-gray-500 text-sm mb-1">Tiểu sử</h4>
         <p className="text-gray-400 whitespace-pre-wrap border-l-2 border-gray-800 pl-4">{bio}</p>
+      </div>
+       <div>
+        <h4 className="font-semibold text-gray-500 text-sm mb-1">Lời Thề</h4>
+        <p className="text-gray-400 whitespace-pre-wrap border-l-2 border-gray-800 pl-4">"{vow}"</p>
       </div>
       <div>
           <h4 className="font-semibold text-gray-500 text-sm mb-2">Trạng thái</h4>
@@ -376,6 +386,7 @@ interface GameScreenProps {
   situation?: InitialSituation;
   playerName: string;
   playerBio: string;
+  playerVow: string;
   initialStats?: PlayerStats;
   playerArchetype: string;
   difficulty: Difficulty;
@@ -386,7 +397,7 @@ interface GameScreenProps {
   onSaveAndExit: (savedGame: SavedGame) => void;
 }
 
-const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBio, initialStats, playerArchetype, difficulty, initialState, onGameOver, onVictory, onError, onSaveAndExit }) => {
+const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBio, playerVow, initialStats, playerArchetype, difficulty, initialState, onGameOver, onVictory, onError, onSaveAndExit }) => {
   const [currentSituation, setCurrentSituation] = React.useState<InitialSituation>(() => initialState?.situation || situation!);
   const [currentDifficulty] = React.useState<Difficulty>(() => initialState?.difficulty || difficulty);
   
@@ -442,7 +453,7 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
       setNpcs(initialPlayerKnownNpcs);
 
       setWorldState(situation.worldState || {});
-      setMainQuest("Sống sót và tìm hiểu xem chuyện gì đang xảy ra.");
+      setMainQuest(situation.mainQuest);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [situation, initialState]);
@@ -450,6 +461,26 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
   React.useEffect(() => {
     storyEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [storyHistory, isLoading]);
+
+  React.useEffect(() => {
+    const body = document.body;
+    const pollutionLevel = playerStats.mentalPollution;
+
+    // Reset classes first
+    body.classList.remove('mental-pollution-high', 'mental-pollution-vignette');
+
+    if (pollutionLevel > 75) {
+        body.classList.add('mental-pollution-high');
+        body.classList.add('mental-pollution-vignette');
+    } else if (pollutionLevel > 40) {
+        body.classList.add('mental-pollution-high');
+    }
+
+    // Cleanup function to remove classes when the component unmounts
+    return () => {
+        body.classList.remove('mental-pollution-high', 'mental-pollution-vignette');
+    };
+  }, [playerStats.mentalPollution]);
   
   const handleSave = () => {
     const currentState: SavedGame = {
@@ -457,6 +488,7 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
       playerName,
       playerBio,
       playerArchetype,
+      playerVow,
       scene,
       storyHistory,
       playerStats,
@@ -508,7 +540,7 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
 
     try {
       // Step 1: Generate the next scene based on current state
-      const nextScene = await generateNextScene(currentSituation, fullHistory, knownRules, choice, playerStats, inventory, npcs, survivors, worldState, keyEvents, mainQuest, sideQuests, knownClues, loreSummaries, loreEntries, playerName, playerBio, playerArchetype, currentDifficulty, turnCount, itemUsedLastTurn);
+      const nextScene = await generateNextScene(currentSituation, fullHistory, knownRules, choice, playerStats, inventory, npcs, survivors, worldState, keyEvents, mainQuest, sideQuests, knownClues, loreSummaries, loreEntries, playerName, playerBio, playerArchetype, playerVow, currentDifficulty, turnCount, itemUsedLastTurn);
       
       // Check for act transition FIRST
       if (nextScene.actTransition) {
@@ -556,24 +588,27 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
 
       // --- Inventory & Item Cooldown ---
       let wasItemUsedOrBroken = false;
+      let tempInventory = [...inventory];
       if (nextScene.newItem) {
-        const itemExists = inventory.some(item => item.name === nextScene.newItem!.name);
+        const itemExists = tempInventory.some(item => item.name === nextScene.newItem!.name);
         if (!itemExists) {
-          newKeyEvents.push(`Đã tìm thấy vật phẩm: ${nextScene.newItem.name}.`);
-          setInventory(prevInventory => [...prevInventory, nextScene.newItem!]);
+          newKeyEvents.push(`Đã nhận được vật phẩm: ${nextScene.newItem.name}.`);
+          tempInventory.push(nextScene.newItem);
         }
       }
-      if (nextScene.itemUsed) {
-        newKeyEvents.push(`Đã sử dụng vật phẩm: ${nextScene.itemUsed}.`);
-        setInventory(prevInventory => prevInventory.filter(item => item.name !== nextScene.itemUsed));
-        wasItemUsedOrBroken = true;
+      if (nextScene.itemsUsed && nextScene.itemsUsed.length > 0) {
+          newKeyEvents.push(`Đã sử dụng vật phẩm: ${nextScene.itemsUsed.join(', ')}.`);
+          tempInventory = tempInventory.filter(item => !nextScene.itemsUsed!.includes(item.name));
+          wasItemUsedOrBroken = true;
       }
       if (nextScene.itemBroken) {
         newKeyEvents.push(`Vật phẩm đã bị hỏng: ${nextScene.itemBroken}.`);
-        setInventory(prevInventory => prevInventory.filter(item => item.name !== nextScene.itemBroken));
+        tempInventory = tempInventory.filter(item => item.name !== nextScene.itemBroken);
         wasItemUsedOrBroken = true;
       }
+      setInventory(tempInventory);
       setItemUsedLastTurn(wasItemUsedOrBroken);
+
 
       // --- Lore & Knowledge ---
       if (nextScene.newLoreSnippet) {
@@ -689,10 +724,10 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
       }
 
       if (nextScene.isVictory) {
-        setStoryHistory(prev => [...prev, nextScene.victoryText || "Bạn đã chiến thắng!"]);
+        setStoryHistory(prev => [...prev, nextScene.sceneDescription, nextScene.victoryText || "Bạn đã chiến thắng!"]);
         setTimeout(() => onVictory(nextScene.victoryText || "Cơn ác mộng đã kết thúc."), 3000);
       } else if (nextScene.isGameOver) {
-        setStoryHistory(prev => [...prev, nextScene.gameOverText]);
+        setStoryHistory(prev => [...prev, nextScene.sceneDescription, nextScene.gameOverText]);
         setTimeout(() => onGameOver(nextScene.gameOverText, nextScene), 3000);
       } else {
         setScene(nextScene);
@@ -777,6 +812,11 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
                 {text}
               </p>
             ))}
+            {scene?.hallucinationText && !isLoading && (
+                <p className="mb-4 text-purple-400 italic flicker fade-in">
+                    {scene.hallucinationText}
+                </p>
+            )}
             {isLoading && <LoadingIndicator />}
             <div ref={storyEndRef} />
           </div>
@@ -847,7 +887,7 @@ const GameScreen: React.FC<GameScreenProps> = ({ situation, playerName, playerBi
 
         {/* Action Bar */}
         <div className="w-full bg-black/50 p-2 rounded-lg border border-gray-900 mt-auto flex flex-wrap justify-center gap-1 sm:gap-2 sticky bottom-4 z-10 backdrop-blur-sm">
-            <button onClick={() => setModalContent({ title: "HỒ SƠ CÁ NHÂN", content: <ProfileContent name={playerName} bio={playerBio} archetype={playerArchetype} stats={playerStats} />})} className="px-3 sm:px-4 py-2 text-sm border border-transparent hover:border-gray-700 text-gray-400 hover:text-white transition-colors">HỒ SƠ</button>
+            <button onClick={() => setModalContent({ title: "HỒ SƠ CÁ NHÂN", content: <ProfileContent name={playerName} bio={playerBio} archetype={playerArchetype} vow={playerVow} stats={playerStats} />})} className="px-3 sm:px-4 py-2 text-sm border border-transparent hover:border-gray-700 text-gray-400 hover:text-white transition-colors">HỒ SƠ</button>
             <button onClick={() => setModalContent({ title: "TRẠNG THÁI NHÓM", content: <GroupContent survivors={survivors} />})} className="px-3 sm:px-4 py-2 text-sm border border-transparent hover:border-gray-700 text-gray-400 hover:text-white transition-colors">NHÓM</button>
             <button onClick={() => setModalContent({ title: "HỒ SƠ VỤ VIỆC", content: <CaseFileContent situation={currentSituation} summaries={loreSummaries} entries={loreEntries} discoveredLore={discoveredLore} />})} className="px-3 sm:px-4 py-2 text-sm border border-transparent hover:border-gray-700 text-gray-400 hover:text-white transition-colors">HỒ SƠ VỤ VIỆC</button>
             <button onClick={() => setModalContent({ title: "NHIỆM VỤ & MANH MỐI", content: <QuestContent mainQuest={mainQuest} sideQuests={sideQuests} knownClues={knownClues} />})} className="px-3 sm:px-4 py-2 text-sm border border-transparent hover:border-gray-700 text-gray-400 hover:text-white transition-colors">NHIỆM VỤ</button>

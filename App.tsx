@@ -21,12 +21,14 @@ const App: React.FC = () => {
   const [playerBio, setPlayerBio] = React.useState<string | null>(null);
   const [playerStats, setPlayerStats] = React.useState<PlayerStats | null>(null);
   const [playerArchetype, setPlayerArchetype] = React.useState<string | null>(null);
+  const [playerVow, setPlayerVow] = React.useState<string | null>(null);
   const [difficulty, setDifficulty] = React.useState<Difficulty | null>(null);
   const [gameOverMessage, setGameOverMessage] = React.useState<string>('');
   const [victoryMessage, setVictoryMessage] = React.useState<string>('');
   const [errorMessage, setErrorMessage] = React.useState<string>('');
   const [isLoading, setIsLoading] = React.useState(false);
   const [worldBuildingAnswers, setWorldBuildingAnswers] = React.useState<{ [key: number]: string } | null>(null);
+  const [customRules, setCustomRules] = React.useState<string>('');
   
   // State for saving/loading
   const [hasSavedGame, setHasSavedGame] = React.useState(false);
@@ -42,11 +44,12 @@ const App: React.FC = () => {
   }, []);
 
 
-  const handleStartNewGame = (mode: 'quick' | 'world_building') => {
+  const handleStartNewGame = (mode: 'quick' | 'world_building', rules: string) => {
     const startAction = async () => {
       localStorage.removeItem(SAVE_KEY);
       setHasSavedGame(false);
       setLoadedGame(null);
+      setCustomRules(rules);
       if (mode === 'quick') {
         setGameState(GameState.CHARACTER_CREATION);
       } else {
@@ -72,7 +75,8 @@ const App: React.FC = () => {
           setLoadedGame(parsedData);
           setPlayerName(parsedData.playerName);
           setPlayerBio(parsedData.playerBio);
-          setPlayerArchetype(parsedData.playerArchetype); // Pass archetype down
+          setPlayerArchetype(parsedData.playerArchetype);
+          setPlayerVow(parsedData.playerVow);
           setDifficulty(parsedData.difficulty);
           setGameState(GameState.PLAYING);
         } catch (e) {
@@ -96,11 +100,12 @@ const App: React.FC = () => {
     setGameState(GameState.CHARACTER_CREATION);
   };
 
-  const handleCharacterCreationComplete = async (name: string, bio: string, stats: PlayerStats, archetype: string, difficulty: Difficulty) => {
+  const handleCharacterCreationComplete = async (name: string, bio: string, stats: PlayerStats, archetype: string, vow: string, difficulty: Difficulty) => {
     setPlayerName(name);
     setPlayerBio(bio);
     setPlayerStats(stats);
     setPlayerArchetype(archetype);
+    setPlayerVow(vow);
     setDifficulty(difficulty);
     setIsLoading(true);
 
@@ -112,16 +117,16 @@ const App: React.FC = () => {
       let initialSituation;
       if (worldBuildingAnswers) {
         // Came from world building flow
-        initialSituation = await generateInitialLore(worldBuildingAnswers, name, bio, archetype, echoes, difficulty);
+        initialSituation = await generateInitialLore(worldBuildingAnswers, name, bio, archetype, vow, echoes, difficulty, customRules);
       } else {
         // Came from quick start flow
-        initialSituation = await generateInitialSituation(name, bio, archetype, echoes, difficulty);
+        initialSituation = await generateInitialSituation(name, bio, archetype, vow, echoes, difficulty, customRules);
       }
       setSituation(initialSituation);
       setGameState(GameState.PLAYING);
     } catch (err) {
       if (err instanceof Error) {
-        handleError(err.message, async () => handleCharacterCreationComplete(name, bio, stats, archetype, difficulty));
+        handleError(err.message, async () => handleCharacterCreationComplete(name, bio, stats, archetype, vow, difficulty));
       } else {
         handleError("Đã xảy ra một lỗi không xác định khi tạo thế giới.");
       }
@@ -173,6 +178,7 @@ const App: React.FC = () => {
     setPlayerBio(null);
     setPlayerStats(null);
     setPlayerArchetype(null);
+    setPlayerVow(null);
     setDifficulty(null);
     setGameOverMessage('');
     setVictoryMessage('');
@@ -181,6 +187,7 @@ const App: React.FC = () => {
     setIsAwaitingApiKey(false);
     setRetryAction(null);
     setLoadedGame(null);
+    setCustomRules('');
   };
 
   const handleError = (message: string, actionToRetry?: () => Promise<void>) => {
@@ -243,13 +250,14 @@ const App: React.FC = () => {
       case GameState.CHARACTER_CREATION:
         return <CharacterCreation onComplete={handleCharacterCreationComplete} />;
       case GameState.PLAYING:
-        if (loadedGame && playerName && playerBio && playerArchetype && loadedGame.difficulty) {
+        if (loadedGame && playerName && playerBio && playerArchetype && playerVow && loadedGame.difficulty) {
             return <GameScreen 
               key="loaded-game"
               initialState={loadedGame}
               playerName={playerName}
               playerBio={playerBio}
               playerArchetype={playerArchetype}
+              playerVow={playerVow}
               difficulty={loadedGame.difficulty}
               onGameOver={handleGameOver} 
               onVictory={handleVictory}
@@ -257,7 +265,7 @@ const App: React.FC = () => {
               onSaveAndExit={handleSaveAndExit}
             />
         }
-        if (situation && playerName && playerBio && playerStats && playerArchetype && difficulty) {
+        if (situation && playerName && playerBio && playerStats && playerArchetype && playerVow && difficulty) {
           return <GameScreen 
             key="new-game"
             situation={situation}
@@ -265,6 +273,7 @@ const App: React.FC = () => {
             playerBio={playerBio}
             initialStats={playerStats} 
             playerArchetype={playerArchetype}
+            playerVow={playerVow}
             difficulty={difficulty}
             onGameOver={handleGameOver} 
             onVictory={handleVictory}

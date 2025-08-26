@@ -27,7 +27,6 @@ const WorldBuilding: React.FC<WorldBuildingProps> = ({ onComplete, onError }) =>
     if (currentQuestionIndex < WORLD_BUILDING_QUESTIONS.length - 1) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
     } else {
-      // Don't call the API here anymore.
       // Pass the final answers up to the App component.
       onComplete(newAnswers);
     }

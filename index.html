@@ -26,6 +26,22 @@
       body {
         font-family: 'Inter', sans-serif;
       }
+      .mental-pollution-high {
+        filter: saturate(0.85) contrast(1.05);
+      }
+      .mental-pollution-vignette::after {
+        content: "";
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        box-shadow: inset 0 0 15vw 5vw rgba(0,0,0,0.7);
+        pointer-events: none;
+        z-index: 100;
+        opacity: 0.7;
+        transition: opacity 1s ease-in-out;
+      }
     </style>
   <script type="importmap">
 {

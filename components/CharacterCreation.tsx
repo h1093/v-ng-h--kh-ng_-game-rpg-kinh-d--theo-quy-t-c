@@ -1,9 +1,9 @@
 import React from 'react';
-import { CHARACTER_CREATION_QUESTION, CHARACTER_CHOICES, DIFFICULTY_CHOICES } from '../constants';
+import { CHARACTER_CREATION_QUESTION, CHARACTER_CHOICES, DIFFICULTY_CHOICES, VOW_CHOICES } from '../constants';
 import { PlayerStats, Difficulty } from '../types';
 
 interface CharacterCreationProps {
-  onComplete: (name: string, bio: string, stats: PlayerStats, archetype: string, difficulty: Difficulty) => void;
+  onComplete: (name: string, bio: string, stats: PlayerStats, archetype: string, vow: string, difficulty: Difficulty) => void;
 }
 
 const CharacterCreation: React.FC<CharacterCreationProps> = ({ onComplete }) => {
@@ -11,6 +11,7 @@ const CharacterCreation: React.FC<CharacterCreationProps> = ({ onComplete }) => 
   const [name, setName] = React.useState('');
   const [bio, setBio] = React.useState('');
   const [selectedArchetype, setSelectedArchetype] = React.useState<{ stats: PlayerStats; archetype: string } | null>(null);
+  const [selectedVow, setSelectedVow] = React.useState<string | null>(null);
   const [selectedDifficulty, setSelectedDifficulty] = React.useState<Difficulty | null>(null);
 
   const handleIdentitySubmit = (e: React.FormEvent) => {
@@ -25,14 +26,19 @@ const CharacterCreation: React.FC<CharacterCreationProps> = ({ onComplete }) => 
       setStep(3);
   }
 
-  const handleDifficultySelect = (difficulty: Difficulty) => {
-      setSelectedDifficulty(difficulty);
+  const handleVowSelect = (vow: string) => {
+      setSelectedVow(vow);
       setStep(4);
   }
 
+  const handleDifficultySelect = (difficulty: Difficulty) => {
+      setSelectedDifficulty(difficulty);
+      setStep(5);
+  }
+
   const handleComplete = () => {
-    if (name && bio && selectedArchetype && selectedDifficulty) {
-      onComplete(name, bio, selectedArchetype.stats, selectedArchetype.archetype, selectedDifficulty);
+    if (name && bio && selectedArchetype && selectedVow && selectedDifficulty) {
+      onComplete(name, bio, selectedArchetype.stats, selectedArchetype.archetype, selectedVow, selectedDifficulty);
     }
   };
   
@@ -98,6 +104,23 @@ const CharacterCreation: React.FC<CharacterCreationProps> = ({ onComplete }) => 
             );
         case 3:
             return (
+                 <div className="w-full max-w-3xl fade-in">
+                    <h2 className="text-3xl text-gray-400 mb-8">Tại sao bạn lại đến nơi bị nguyền rủa này?</h2>
+                    <div className="space-y-4">
+                    {VOW_CHOICES.map((choice, index) => (
+                        <button
+                            key={index}
+                            onClick={() => handleVowSelect(choice.vow)}
+                            className="w-full p-4 text-left border-2 border-gray-700 hover:bg-gray-900 hover:border-red-500 transition-all duration-200"
+                        >
+                            <p className="text-lg">{choice.text}</p>
+                        </button>
+                    ))}
+                    </div>
+                </div>
+            );
+        case 4:
+            return (
                 <div className="w-full max-w-4xl fade-in">
                     <h3 className="text-3xl text-gray-400 mb-8">Chọn độ khó của cơn ác mộng</h3>
                     <div className="grid md:grid-cols-3 gap-4">
@@ -114,7 +137,7 @@ const CharacterCreation: React.FC<CharacterCreationProps> = ({ onComplete }) => 
                     </div>
                 </div>
             );
-        case 4:
+        case 5:
             return (
                 <div className="w-full max-w-3xl text-center fade-in">
                     <h2 className="text-3xl text-gray-400 mb-4">Mọi thứ đã sẵn sàng</h2>
